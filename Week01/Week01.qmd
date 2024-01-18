@@ -1,0 +1,268 @@
+---
+title: "GR5065: Introduction"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+---
+
+## [Bayesian Articles over Time](https://www.annualreviews.org/doi/abs/10.1146/annurev-soc-073018-022457)
+
+[![Lynch and Bartlett (2019)](figure.jpeg){fig-alt="Lynch and Bartlett (2019)" fig-align="center"}](https://www.annualreviews.org/doi/abs/10.1146/annurev-soc-073018-022457)
+
+## [Bayesian Undergraduate Courses](https://statmodeling.stat.columbia.edu/2021/10/25/the-current-state-of-undergraduate-bayesian-education-and-recommendations-for-the-future/)
+
+-   One of the coauthors of the *Bayes Rules* textbook also coauthored a [paper](https://arxiv.org/abs/2109.00848) on the prevalence of Bayesian courses at $102$ U.S. universities and $50$ liberal arts colleges
+    -   45 research universities (but only 6 liberal arts colleges) have undergraduate Bayesian courses, almost all of which are in the stat or math departments
+
+    -   Only 4 require a Bayesian course for a stat major
+
+    -   These Bayesian courses tend to have SIX prerequisites
+
+. . .
+
+-   You are taking a graduate class without the benefit of a previous undergraduate class or most of the prerequisites
+
+## What is GR5065 About?
+
+::: incremental
+-   GR5065 is about how quantitative methods should be used in the social sciences but also applies to science generally
+
+-   Don Berry: "Bayesian statistics is difficult in the sense that thinking is difficult." GR5065 is essentially a combination of
+
+    1.  A full semester of probability at the master's level
+
+    2.  A substantial part of theory & methodology that was not covered at all in the theory & methodology [course](https://doc.sis.columbia.edu/#subj/QMSS/G5010-20233-005/) that is required of QMSS students in their first semester
+
+    3.  Learning new R packages that utilize Stan to do (1) and (2)
+
+    4.  Unlearning much of what you thought you learned before
+:::
+
+## Obligatory Disclosure
+
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+. . .
+
+```{=html5}
+<iframe width="500" height="200" src="https://video.twimg.com/ext_tw_video/999106109523742720/pu/vid/640x360/ljdUoEqXji0ES_CV.mp4?tag=3" title="Stan was featured in Billions" frameborder="0" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+```
+## R and Stan
+
+-   This course uses the statistical software R(Studio)
+-   If you have neither used R nor another programming language (e.g. Python, Java, C++) this course will be *very* difficult because we do not teach the basics of R since QMSS students have already used R for at least one semester
+-   Homeworks will be done using quarto (we will demonstrate)
+-   Stan is another programming language, which we will not learn directly but can be accessed from a variety of other [interfaces](http://mc-stan.org/users/interfaces/index.html) besides R which you might prefer to use for Bayesian inference after the course is finished
+
+## [The Simplest Impossible Problem](https://youtu.be/m4CjXk_b8zo)
+
+[Collatz Conjecture](https://en.wikipedia.org/wiki/Collatz_conjecture): Function terminates for all positive integers
+
+```{r}
+is_even <- function(x) return((x %% 2) == 0)
+Collatz <- function(x) { # x must be a single positive integer
+  stopifnot(length(x) == 1, is.finite(x), x > 0, x == floor(x))
+  while (x != 1) {
+    if (is_even(x)) {
+      x <- x / 2
+    } else {
+      x <- 3 * x + 1
+      if (is.infinite(x)) return(NA) # conjecture is undetermined
+    }
+  }
+  return(TRUE) # because x is currently 1
+}
+```
+
+. . .
+
+If there were *any* positive integer where this sequence of $x$ values diverges to $\infty$ or enters a cycle not involving $1$, then the Collatz Conjecture would be falsified.
+
+## [Aristotelian (Propositional) Logic](https://en.wikipedia.org/wiki/Term_logic)
+
+1.  Every human being is an animal
+2.  Socrates is a human being
+3.  Ergo, Socrates is an animal
+
+. . .
+
+-   There are zero interesting applications of deductive logic in the social sciences, which are, by their nature, inductive
+-   The closest is perhaps democratic peace "theory":
+    1.  Democratic countries won't fight a war against each other
+    2.  Australia and Canada are democracies
+    3.  Ergo, Australia will not fight Canada in a war
+
+## How Social Science Actually Works
+
+1.  Incumbents with much more disapproval than approval *tend* to lose their reelection campaigns
+
+2.  Joe Biden has an approval rating *somewhat* below 40%
+
+3.  Ergo, Biden will *probably* lose the November 2024 election
+
+. . .
+
+Neither (1) nor (3) is guaranteed, although (3) seems plausible \-\-- to some degree \-\-- to the extent you accept both (1) and (2). Bayesianism is a school of thought that uses probability to describe the degree of belief (with quantified uncertainty) that a proposition is true.
+
+## PredictIt [Market](https://www.predictit.org/markets/detail/7456/Who-will-win-the-2024-US-presidential-election) for President
+
+```{r}
+#| echo: false
+#| message: false
+library(dplyr)
+library(ggplot2)
+predictit <- readr::read_csv("predictit.csv", show_col_types = FALSE) |> 
+  filter(ContractName == "Trump" | ContractName == "Biden") |> 
+  mutate(across(ends_with("Price"), ~as.numeric(gsub("$", "", .x, fixed = TRUE))),
+         Date = as.Date(gsub(" .*$", "", Date), format = "%m/%d/%Y"))
+ggplot(predictit) +
+  geom_line(aes(x = Date, y = CloseSharePrice, color = ContractName)) +
+  ylim(0.35, 0.51) +
+  scale_color_manual(values = c("blue", "red")) +
+  theme(legend.position = "top") +
+  labs(x = "Date", y = "Contract Closing Price in Cents")
+```
+
+## Four or Five Sources of Uncertainty
+
+1.  Uncertainty about parameters in models
+2.  Uncertainty about which model is best
+3.  Uncertainty about what to do with model output
+4.  Uncertainty about whether the software works as intended
+5.  Uncertainty about whether the model holds with other data
+
+. . .
+
+-   Bayesians use probability to describe their uncertainty in (1), (2), and (5), which along with decision theory prescribes (3)
+-   The Stan software does as much as we can to mitigate (4)
+-   Other forms of inference handle these five issues differently
+
+## Example of Bayesian Inference
+
+::: incremental
+-   What do you believe is the average age among Columbia graduate students?
+
+-   Describe your beliefs using a normal (Gaussian) distribution
+
+-   The Bayesian approach transforms this normal distribution of beliefs into a different distribution of beliefs after observing data, such as the ages of the $N$ students in this class
+
+-   This process is quite different from randomization inference, Frequentist inference, and supervised learning that yield point or interval estimates
+:::
+
+## Example of Randomization Inference
+
+Form pairs. Exactly one person in each pair should execute in R
+
+```{r}
+#| eval: false
+sample(c("me", "you"), size = 1) # or flip a coin
+```
+
+Compute the difference in age between the indicated (treated) person and the other (control) person, which can be negative
+
+. . .
+
+::: incremental
+-   What do you think is the average difference in the class?
+
+-   How much do you think this estimate departs from zero?
+:::
+
+. . .
+
+Do it again with different pairs
+
+. . .
+
+There are `r as.character(choose(42, 21))` ways to form pairs among 42 students, defining a probability distribution of average differences
+
+## $p$-values in Randomization Inference
+
+```{r}
+#| echo: false
+library(ggplot2)
+ggplot() +
+  xlim(-3, 3) +
+  geom_function(fun = dnorm) +
+  geom_vline(aes(xintercept = -1.96), color = "red") +
+  geom_vline(aes(xintercept =  1.96), color = "red") +
+  labs(x = "Average (scaled) Difference between Treated and Control",
+       y = "Density")
+```
+
+## Hypothesis Testing
+
+-   McElreath (2022, p.10): "The greatest obstacle that I encounter among students and colleagues is the tacit belief that the proper objective of statistical inference is to test null hypotheses"
+
+    -   Hypotheses are not models
+
+    -   Measurement error prevents deductive falsification
+
+-   Science hinges on what a treatment effect *is*, rather than what it is not (the hypothesized null value)
+
+-   Science requires honesty about uncertainty in estimates
+
+## Example of Frequentist Inference
+
+What is the average age among Columbia graduate students?
+
+. . .
+
+-   Let each row in the class be a sample from that population
+
+-   Sum ages from left to right in your row
+
+-   Right-most person divides to compute the row's average
+
+. . .
+
+**Central Limit Theorem**: The distribution of age averages among all ways to randomly sample $N$ graduate students from Columbia is (asymptotically) normal
+
+. . .
+
+But the expectation and standard deviation of that normal distribution cannot be known with certainty from a (finite) sample of size $N$
+
+## Frequentist Inference as Deduction
+
+1.  If the null hypothesis is true, the (standardized) estimator will be greater than $1.96$ in magnitude in 5% possible samples of size $N$
+
+2.  The $p$-value from this sample is less than $0.05$
+
+3.  Ergo, the null hypothesis is falsified
+
+. . .
+
+-   Is not even sound logic when there are probabilities, but even if it were sound, what scientific purposes would be served by deciding the null hypothesis is not literally true?
+
+## Example of Supervised Learning
+
+-   Supervised learning is like Frequentist estimation --- but without the null hypothesis testing --- to predict outcomes
+
+-   Suppose the back row is "testing" data and the other rows are "training" data
+
+-   What is the average absolute difference between testing ages and average training ages?
+
+. . .
+
+-   Often the testing data is a randomly-selected subset of the total data but supervised learning usually does not consider the implications of this randomization into training / testing
+
+-   Supervised learning deemphasizes probabilty distributions
+
+## Different Quantitative Methodologies {.smaller}
+
+| What is the paradigm? | What is fixed?                  | What is random?                                         | What is averaged over?                                                          | What is the conclusion?      |
+|---------------|---------------|---------------|---------------|---------------|
+| Randomization         | ${y_1, y_2, \dots, y_N}$        | Treatment assignment                                    | Hypothetical experiments                                                        | ATE $\neq 0$?                |
+| Frequentist           | $Y$, $\boldsymbol{\theta}$, $N$ | Sample inclusion                                        | Confidence interval catches                                                     | Hypothesis test              |
+| Supervised learning   | ${y_1, y_2, \dots, y_N}$        | Training / testing inclusion                            | Loss in the testing data                                                        | Some procedure predicts best |
+| Bayesian              | ${y_1, y_2, \dots, y_N}$        | Prior and posterior beliefs about $\boldsymbol{\theta}$ | Functions of posterior draws of $\boldsymbol{\theta} \mid y_1, y_2, \dots, y_N$ | Decision or action           |
+
+. . .
+
+These four paradigms for quantitative methodology are very different and incompatible. GR5065 is about why you should use the Bayesian paradigm in the social sciences
