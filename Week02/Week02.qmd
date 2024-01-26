@@ -1,0 +1,421 @@
+---
+title: "Probability with Discrete Random Variables"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+---
+
+## Obligatory Disclosure
+
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+## Goals for Today
+
+-   Start to learn probability with some degree of rigor
+
+-   Compare and contrast ancient and modern computation
+
+    -   Ancient Bayesian inference could be done with a pen but was feasible only for a small subset of problems
+
+    -   Modern Bayesian inference (1990+) is mostly done with computer simulations, which is possible with R for a large subset of problems but can be slow with Big Data
+
+    -   When Ancient Bayesian inference is feasible (e.g., this week), it yields essentially the same answer as Modern
+
+-   Compare and contrast Bayesianism with anti-Bayesianism
+
+## Random Variables (R.V.)
+
+-   A function is a rule that *uniquely* maps each element of an input set to some element of an output set, e.g. $e^x$ maps real numbers $\left(\mathbb{R}\right)$ to non-negative real numbers $\left(\mathbb{R_+}\right)$
+-   A random variable is a *function* from the sample space, $\Omega$, to some subset of $\mathbb{R}$ with a probability-based rule
+-   If $\Omega$ is discrete with a finite number of elements, then we can simply enumerate an equivalent number of probabilities
+
+```{r}
+roll <- sample(1:6, size = 1, prob = rep(1 / 6, times = 6)) # do this
+```
+
+-   Do not conflate a *realization* of a R.V. with the *function* that generated it; by convention, a capital letter, $X$, indicates a R.V. and its lower-case counterpart, $x$, indicates a realization
+
+## Bowling Basics
+
+Each "frame" in bowling starts with $n = 10$ pins. You get up to two rolls per frame to knock down as many pins as you can.
+
+```{=html5}
+<iframe width="1908" height="879" src="https://www.youtube.com/embed/HeiNrSllyzA" title="❌ How to Pick Up the 7 - 10 Split in Bowling 🎳" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+```
+## Approaching Bowling Probabilistically
+
+::: incremental
+-   What is $\Omega$ for the number of pins knocked down on roll $1$?
+-   If $b^p = y$, then $\log_b\left(y\right) = p$. Let the probability of knocking down $x$ out of $n$ pins be given by a form of [Benford's Law](https://en.wikipedia.org/wiki/Benford%27s_law): $\Pr\left(x \mid n\right) = \log_{n + 2}\left(1 + \frac{1}{n + 1 - x}\right)$, presuming $0 \leq x \leq n$.
+:::
+
+. . .
+
+```{r, Pr}
+# probability of knocking down x out of n pins
+Pr <- function(x, n = 10) ifelse(x > n, 0, log(1 + 1 / (n + 1 - x), n + 2))
+Omega <- 0:10 # 0, 1, ..., 10
+names(Omega) <- as.character(Omega)
+source("bowling.R") # does the above, if your working directory is Week02
+x_1 <- sample(Omega, size = 1, prob = Pr(Omega)) # do this
+```
+
+. . .
+
+```{r}
+round(c(Pr(Omega), total = sum(Pr(Omega))), digits = 4)
+```
+
+## Second Roll in a Frame of Bowling
+
+-   How would you draw $x_2$, which is the realization of your second roll in the first frame of bowling?
+
+. . .
+
+```{r}
+x_2 <- sample(Omega, size = 1, prob = Pr(Omega, n = 10 - x_1)) # legal?
+```
+
+. . .
+
+-   If $x_1 > 0$, some elements of $\Omega$ have zero probability in the second roll, which is enforced by the `ifelse()` in `Pr()`
+-   $\Pr\left(x \mid n = 10 - x_1\right)$ is a *conditional* probability because it depends on the realization of $x_1$ via $n = 10 - x_1$
+-   [Joe Blitzstein](https://youtu.be/dzFf3r1yph8): "Conditioning is the soul of statistics"
+
+. . .
+
+-   Pairs exercise: Simulate $R = 10$ frames of bowling (each with two rolls), storing the number of pins knocked down
+
+## Simulating $R$ Frames of Bowling
+
+```{r}
+#| message: false
+#| code-line-numbers: 1-2|3-4|5-8
+R <- 10^7  # practically infinite (to almost match exact calculations)
+frames <-  # tibble with the results of R frames of bowling
+  tibble(X_1 = sample(Omega, size = R, replace = TRUE, 
+                      prob = Pr(Omega))) |> # all R first rolls
+  group_by(X_1) |> # then all second rolls, one group at a time
+  mutate(X_2 = sample(Omega, size = n(), replace = TRUE, 
+                      prob = Pr(Omega, n = 10 - first(X_1)))) |>
+  ungroup() # first(X_1) is needed so that n is a scalar in ^^^
+```
+
+. . .
+
+```{r}
+print(frames, n = 10)
+```
+
+## Probability Via dplyr / SQL Syntax
+
+`|>` pipes a previously created `tibble` to the next function
+
+| Concept             | R Syntax \[after callling **library(dplyr)**\] |
+|---------------------|------------------------------------------------|
+| $X$                 | `tibble(X = sample(…))` or `|> mutate()`       |
+| $\mid X = x$        | `|> filter(X == x) |> ...`                     |
+| $\mid X$            | `|> group_by(X) |> ... |> ungroup()`           |
+| $\Pr\left(x\right)$ | `|> summarize(prob = mean(X == x))`            |
+
+Also, `count()` is essentially equivalent to `group_by(X) |> summarize(times = n())` where the `n()` function yields the number of observations for each group in the `tibble`
+
+## Checking the Simulations
+
+```{r}
+frames |> # vvv is like group_by(frames, X_1) |> summarize(times = n())
+  count(X_1, name = "times") |>  # a tibble with 11 rows
+  mutate(proportion = times / R, # almost exact but not quite
+         probability = Pr(X_1))  # same concept as proportion but exact
+```
+
+## Joint (here bivariate) Probabilities
+
+-   How would you compute the probability that $X_1 = 8$ and $X_2 = 2$ in a frame of bowling from the simulated `frames`?
+
+. . .
+
+```{r}
+summarize(frames, joint_prob = mean(X_1 == 8 & X_2 == 2)) # & is "and"
+```
+
+. . .
+
+-   How would you calculate it exactly using our `Pr()` function?
+
+. . .
+
+```{r}
+Pr(x = 8, n = 10) * Pr(x = 2, n = 10 - 8)
+```
+
+. . .
+
+-   Ancient (deterministic) calculations *describe* the Modern process by which the data in `frames` were simulated
+
+## From [Aristotelian Logic](https://en.wikipedia.org/wiki/Boolean_algebra) to Probability
+
+-   In R (and most other languages), `TRUE` maps to $1$ and `FALSE` maps to $0$ when doing arithmetic operations
+
+```{r, AND}
+c(TRUE & TRUE, TRUE & FALSE, FALSE & TRUE, FALSE & FALSE)
+c(TRUE * TRUE, TRUE * FALSE, FALSE * TRUE, FALSE * FALSE)
+```
+
+. . .
+
+::: incremental
+-   Can generalize to numbers on the $[0,1]$ interval to calculate the probability that two (or more) propositions are both true. $\bigcap$ reads as "and". **General Multiplication Rule**: $\Pr\left(A\bigcap B\right)=\Pr\left(B\right)\times\Pr\left(A\mid B\right)=\Pr\left(A\right)\times\Pr\left(B\mid A\right)$
+-   Iff $A$ and $B$ are independent, $\Pr\left(A \mid B\right) = \Pr\left(A\right)$ and $\Pr\left(B \mid A\right) = \Pr\left(B\right)$, so $\Pr\left(A\bigcap B\right) = \Pr\left(A\right) \times \Pr\left(B\right)$
+:::
+
+## Enumerating Bivariate Probabilities
+
+```{r, joint_Pr}
+#| code-line-numbers: 1|2-3|4-5|6-9
+joint_Pr <- table(frames) / R # do this rather than vvv
+joint_Pr <- matrix(0, nrow = length(Omega), ncol = length(Omega),
+                   dimnames = list(Omega, Omega))
+for (x_1 in Omega) {
+  Pr_x_1 <- Pr(x_1, n = 10)
+  for (x_2 in 0:(10 - x_1)) {
+    joint_Pr[x_1 + 1, x_2 + 1] <- Pr_x_1 * Pr(x_2, n = 10 - x_1)
+  } # R indexes starting from 1 (not 0), so have to +1 the indices
+}
+```
+
+. . .
+
+```{r}
+sum(joint_Pr)
+```
+
+. . .
+
+```{r}
+#| eval: false
+joint_Pr # do View(joint_Pr) to see it better than on the next slide
+```
+
+What is the probability of knocking down nine pins on the second roll of a frame of bowling, irrespective of what happens on the first roll? How can you utilize `joint_Pr` to calculate it?
+
+##  {.smaller}
+
+```{r}
+#| echo: false
+#| message: false
+library(knitr)
+library(kableExtra)
+options("kableExtra.html.bsTable" = TRUE)
+options(scipen = 5)
+options(knitr.kable.NA = "")
+tmp <- as.data.frame(joint_Pr)
+for (i in 1:ncol(tmp)) 
+  tmp[,i] <- cell_spec(round(tmp[,i], digits = 4), "html", 
+                       bold = tmp[,i] == 0,
+                       color = ifelse(tmp[,i] == 0, "red", "black"))
+kable(tmp, align = 'c', escape = FALSE) |>
+    kable_styling("striped", full_width = FALSE)
+```
+
+## Probability of Non-Exclusive Events
+
+-   How would you compute the probability that $X_1 = 8$ or $X_2 = 2$ in the same frame of bowling using `frames`?
+
+. . .
+
+```{r}
+summarize(frames, # in R, | reads as "or" not "given" as in math
+          prob  = mean(X_1 == 8 | X_2 == 2), 
+          wrong = mean(X_1 == 8) + mean(X_2 == 2),
+          right = mean(X_1 == 8) + mean(X_2 == 2) - 
+                  mean(X_1 == 8 & X_2 == 2)) # fix double-counting
+```
+
+. . .
+
+-   How would you calculate it exactly using `joint_Pr`?
+
+. . .
+
+```{r}
+sum(joint_Pr["8", ]) + sum(joint_Pr[ , "2"]) - joint_Pr["8", "2"]
+```
+
+## Aristotelian Logic to Probability Again
+
+```{r, OR}
+c(TRUE | FALSE, FALSE | TRUE, FALSE | FALSE, TRUE | TRUE)
+c(TRUE + FALSE, FALSE + TRUE, FALSE + FALSE, TRUE + TRUE - TRUE * TRUE)
+```
+
+::: incremental
+-   Can generalize Aristotelian logic to numbers on the $[0,1]$ interval to calculate the probability that one of two propositions is true. $\bigcup$ is read as "or". **General Addition Rule**: $\Pr\left(A\bigcup B\right)=\Pr\left(A\right)+\Pr\left(B\right)-\Pr\left(A\bigcap B\right)$
+
+-   If $\Pr\left(A\bigcap B\right) = 0$, $A$ and $B$ are said to be disjoint (or mutually exclusive)
+:::
+
+## A Function of a R.V. is a R.V.
+
+::: incremental
+-   What is the probability of getting a spare --- knocking down all $10$ pins over both rolls but not the first --- in bowling? How would you compute it using the simulated `frames`?
+:::
+
+. . .
+
+```{r}
+summarize(frames, spare_prob = mean(X_1 != 10 & X_1 + X_2 == 10))
+```
+
+. . .
+
+-   How would you calculate it exactly using `joint_Pr`?
+
+. . .
+
+```{r}
+spare_prob <- 0 # Have to +1 the indices in R
+for (x_1 in 9:0) spare_prob <- spare_prob + joint_Pr[x_1 + 1, 10 - x_1 + 1]
+spare_prob 
+```
+
+## Marginal Probabilities via `joint_Pr` {.scrollable .smaller}
+
+```{r, marginal}
+#| echo: false
+#| message: false
+tmp <- as.data.frame(cbind(joint_Pr, " " = -1, 
+                           "row-sum" = rowSums(joint_Pr)))
+tmp <- rbind(tmp, " " = -1, "col-sum" = colSums(tmp))
+for (i in 1:ncol(tmp)) 
+  tmp[,i] <- cell_spec(round(tmp[,i], digits = 3), "html", 
+                       bold = tmp[,i] == 0,
+                       color = ifelse(tmp[,i] == 0, "red", 
+                                      ifelse(tmp[,i] > 
+                                               1 - 1e-8 | tmp[,i] < 0, 
+                                             "white", "black")))
+kable(tmp, align = 'c', escape = FALSE) |>
+    kable_styling("striped", full_width = FALSE)
+```
+
+## Checking the Simulations Again
+
+```{r}
+frames |> # vvv is like group_by(frames, X_2) |> summarize(times = n())
+  count(X_2, name = "times") |>  # a tibble with 11 rows
+  mutate(proportion = times / R, # almost exact but not quite
+         probability = colSums(joint_Pr)) # exact
+```
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+. . .
+
+I prefer the notation $\Pr\left(\bcancel{x_1} \bigcap x_2 \mid n\right)$ to refer to the marginal(ized) probability that $X_2 = x_2$, irrespective of $X_1$
+
+## Marginal(ized), Conditional, and Joint
+
+::: incremental
+-   To compose a joint (in this case, bivariate) probability, *multiply* a marginal probability by a conditional probability
+-   To decompose a joint (in this case, bivariate) probability, *add* the relevant joint probabilities to obtain a marginal probability
+-   To obtain a conditional probability, *divide* the joint probability by the marginalized probability of what you're conditioning on: $$\Pr\left(A\bigcap B\right)=\Pr\left(B\right)\times\Pr\left(A \mid B\right) =
+    \Pr\left(A\right)\times\Pr\left(B\mid A\right)$$ $$\implies \Pr\left(A \mid B\right)= \frac{\Pr\left(A\right)\times\Pr\left(B\mid A\right)}
+    {\Pr\left(B\right)} = 
+    \frac{\Pr\left(A \bigcap B\right)}
+    {\Pr\left(\bcancel{A} \bigcap B\right)}$$
+:::
+
+## Using Bayes' Rule for Bowling
+
+-   How would you compute the probability that $X_1 = 8$ given that $X_2 = 2$ in the same frame of bowling using `frames`?
+
+. . .
+
+```{r}
+filter(frames, X_2 == 2) |>
+  summarize(cond_prob = mean(X_1 == 8))
+```
+
+. . .
+
+-   How would you calculate it exactly using `joint_Pr`?
+
+. . .
+
+```{r}
+joint_Pr["8", "2"] / sum(joint_Pr[ , "2"])
+```
+
+as compared to a prior (marginalized) probability of knocking down $8$ pins on the first roll, `Pr(8, n = 10)` $= `r Pr(8, n = 10)`$
+
+##  {.smaller}
+
+```{r}
+#| echo: false
+tmp <- as.data.frame(joint_Pr)
+eight <- round(unlist(tmp["8", ]), digits = 4)
+for (i in 1:ncol(tmp)) 
+  tmp[,i] <- cell_spec(round(tmp[,i], digits = 4), "html", 
+                       bold = tmp[,i] == 0,
+                       color = ifelse(tmp[,i] == 0, "red", 
+                                      ifelse(i == 3, "black", "blue")))
+tmp["8", ] <- cell_spec(eight, "html", bold = eight == 0, 
+                        color = ifelse(eight == 0, "red", "green"))
+kable(tmp, align = 'c', escape = FALSE) |>
+    kable_styling("striped", full_width = FALSE)
+```
+
+## Bayesian vs Frequentist Probability {.smaller}
+
+-   Bayesians generalize this by taking $A$ to be "whatever you do not know" and $B$ to be "whatever you do know" to manage their beliefs using Bayes' Rule $$\Pr\left(A \mid B\right)= \frac{\Pr\left(A\right)\times\Pr\left(B\mid A\right)}
+    {\Pr\left(B\right)} = 
+    \frac{\Pr\left(A \bigcap B\right)}
+    {\Pr\left(\bcancel{A} \bigcap B\right)}
+    $$
+-   Utilizing Bayes' Rule is *necessary but not sufficient* to be Bayesian
+-   Frequentists accept the validity Bayes' Rule but object to using the language of probability to describe beliefs about unknown propositions and insist that probability is a property of a process that can be defined as a limit $$\Pr\left(A\right) = \lim_{R\uparrow\infty} 
+    \frac{\mbox{times that } A \mbox{ occurs in } R \mbox{ independent randomizations}}{R}$$
+
+## Probability an Odd Integer is Prime
+
+::: incremental
+-   John Cook [asks](https://www.johndcook.com/blog/2010/10/06/probability-a-number-is-prime/) an instructive question: What is the probability $x$ is prime, where $x$ is like $1 + 10^{100,000,000}$?
+
+-   To Frequentists, $x$ is not a random variable. It is either prime or composite so it makes no sense to say "$x$ is probably $\dots$"
+
+-   To Bayesians, no one knows for sure whether $x$ is prime or composite, but you could chose --- and then update --- a prior probability based on its number of digits, $d$ (when $d$ is large): $\Pr\left(x \mbox{ is prime} \mid d\right) = \frac{1}{d \ln 10} \approx \frac{1}{10^{10} \times 2.3}$
+:::
+
+. . .
+
+-   What is the probability that $\beta > 0$ in a regression model?
+
+## [Sanderson](https://www.3blue1brown.com/lessons/bayes-theorem): Scope of Bayes' Rule
+
+[![](https://3b1b-posts.us-east-1.linodeobjects.com/content/lessons/2019/bayes-theorem/when-to-use.png){fig-align="center" width="1024" height="393"}](https://3b1b-posts.us-east-1.linodeobjects.com/content/lessons/2019/bayes-theorem/when-to-use.png)
+
+> What's noteworthy is that such a straightforward fact about proportions can become hugely significant for science, AI, and any situation where you want to quantify belief.
+
+## Anti-Bayesian Perspectives
+
+-   Fisher argued "the theory of inverse probability is founded upon an error, and must be wholly rejected" because $H$ is not a random variable so the prior probability, $\Pr\left(H\right)$, the marginalized probability, $\Pr\left(\bcancel{H} \bigcap E\right)$, and the posterior probability $\Pr\left(H \mid E\right)$ are not well-defined quantities or else they are just subjective characteristics of the researcher
+
+-   Frequentism is all about $\Pr\left(E \mid H\right)$, which $\neq \Pr\left(H \mid E\right)$
+
+-   Supervised learning accepts that Bayes Rule is valid, but maintains that probability should not be a prerequisite
