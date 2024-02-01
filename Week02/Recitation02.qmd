@@ -1,0 +1,228 @@
+---
+title: "Recitation for Week02"
+author: " Apoorva Joshi"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+---
+
+## Setup for Recitation
+
+-   Open the GR5065_2024 "project" in RStudio
+
+-   Click the blue arrow under the Git tab to pull
+
+-   Change the working directory to Week02
+
+-   Create a Quarto document by clicking on File -\> New File -\> Quarto Document and choosing the PDF option. Save it in the Week02 subdirectory
+
+-   Create a R chunk and then write and execute `source("bowling.R")` to create `Omega` and `Pr()`
+
+```{r}
+#| include: false
+source("bowling.R")
+set.seed(123)
+```
+
+## One Frame of Bowling
+
+-   How can we draw the first roll?
+
+. . .
+
+```{r}
+x_1 <- sample(Omega, size = 1, prob = Pr(Omega))
+x_1
+```
+
+-   How can we draw the second roll?
+
+. . .
+
+```{r}
+x_2 <- sample(Omega, size = 1, prob = Pr(Omega, n = 10 - x_1))
+x_2
+```
+
+. . .
+
+We could repeat this process $R$ times to draw $R$ frames of bowling, where the frames are independent of each other but the two rolls within a frame are not
+
+## A Game of Bowling Via `for` Loop
+
+Type this in a R chunk:
+
+```{r}
+#| code-line-numbers: 1-3|4|5|6|7-8
+R <- 10
+frames <- matrix(NA_integer_, nrow = R, ncol = 2)
+colnames(frames) <- c("X_1", "X_2")
+for (r in 1:R) { # relatively slow in R
+  x_1 <- sample(Omega, size = 1, prob = Pr(Omega))
+  x_2 <- sample(Omega, size = 1, prob = Pr(Omega, n = 10 - x_1))
+  frames[r, ] <- c(x_1, x_2)
+}
+```
+
+. . .
+
+```{r}
+frames
+```
+
+## A Game of Bowling Via dplyr
+
+```{r}
+frames <- tibble(X_1 = sample(Omega, size = R, replace = TRUE,
+                              prob = Pr(Omega)))
+arrange(frames, X_1) # only eight unique values
+```
+
+. . .
+
+```{r}
+frames <- group_by(frames, X_1) |>
+  mutate(X_2 = sample(Omega, size = n(), replace = TRUE,
+                      prob = Pr(Omega, n = 10 - first(X_1)))) |> 
+  ungroup() # now has two columns
+```
+
+. . .
+
+This is conceptually equivalent with no explicit `for` loops
+
+## $R = 10,000,000$ Frames of Bowling
+
+Type this (from Thursday) in a R chunk and execute it
+
+```{r}
+#| code-line-numbers: 1|2-3|4|5-7
+R <- 10^7  # practically infinite
+frames <- tibble(X_1 = sample(Omega, size = R, replace = TRUE, 
+                 prob = Pr(Omega))) |> # all R first rolls
+  group_by(X_1) |> # then all second rolls, one group at a time
+  mutate(X_2 = sample(Omega, size = n(), replace = TRUE, 
+                      prob = Pr(Omega, n = 10 - first(X_1)))) |>
+  ungroup()
+```
+
+. . .
+
+```{r}
+print(frames, n = 8)
+```
+
+## Quantities of Interest
+
+::: incremental
+-   With $R$ draws from our bowling model, we can make database-like queries to approximately answer questions that are not obvious but would otherwise be non-trivial to calculate exactly (although that too is possible in this case)
+
+-   What is the (marginal) probability that $X_2 = 5$?
+:::
+
+. . .
+
+```{r}
+# X_2 == 5 is a logical vector of size R 
+# mean() thereof is a proportion, which estimates a probability
+summarize(frames, prob = mean(X_2 == 5))
+```
+
+## Conditioning Order (classic blunder)
+
+-   What is the probability that $X_2 = 5$, given that $X_1 = 5$?
+
+. . .
+
+```{r}
+filter(frames, X_1 == 5) |> # condition on X_1 being 5 by subsetting
+  summarize(prob = mean(X_2 == 5))
+Pr(5, n = 10 - 5) # exact
+```
+
+. . .
+
+-   What is the probability that $X_1 = 5$, given that $X_2 = 5$?
+
+. . .
+
+```{r}
+filter(frames, X_2 == 5) |> # condition on X_2 being 5 by subsetting
+  summarize(prob = mean(X_1 == 5)) # Why is this not the same number?
+```
+
+## Scoring in Bowling
+
+```{r}
+frames <- mutate(frames, game = rep(1:10^6, each = 10)) # type this
+```
+
+-   Keeping score in bowling is a classic computer science problem because under "traditional" scoring, the bonus points received for a spare or a strike depends on future rolls
+
+-   We are going to utilize the simpler "World Bowling" [scoring](https://en.wikipedia.org/wiki/Ten-pin_bowling#World_Bowling_scoring):
+
+    -   A strike --- knocking down all 10 pins on the *first* roll --- is worth 30 points
+
+    -   A spare --- knocking down all 10 pins over two rolls in the same frame --- is worth 10 points, plus the number of pins knocked down on the first roll of that same frame
+
+    -   Otherwise, points $=$ pins knocked down that frame
+
+## Scoring Exercise (on your own)
+
+In a R chunk, compute the score as the sum of the number of points scored over all ten frames in a game of bowling under "World Bowling Rules" using the million games in `frames` and the `case_when` or `if_else` functions in dplyr
+
+. . .
+
+```{r}
+scores <- mutate(frames, points = case_when(
+    X_1 == 10 ~ 30,             # strike
+    X_1 + X_2 == 10 ~ 10 + X_1, # spare but not a strike
+    TRUE ~ X_1 + X_2            # neither a strike nor a spare
+  )) |> 
+  group_by(game) |> # now calculate one game at a time
+  summarize(game_score = sum(points)) # reduction, so now tidy by game
+```
+
+. . .
+
+```{r}
+print(scores, n = 2)
+```
+
+## Scoring Probabilities
+
+```{r}
+#| message: false
+library(ggplot2) # not quite Gaussian
+ggplot(scores) + geom_bar(aes(x = game_score, y = ..prop..))
+```
+
+## Scoring Questions
+
+-   How would you compute the probability that the score of a game is $\geq 200$ (which is complicated deterministically)?
+
+. . .
+
+```{r}
+summarize(scores, prob = mean(game_score >= 200))
+```
+
+. . .
+
+-   What is the probability of a "perfect game" (a score of 300)?
+
+. . .
+
+```{r}
+summarize(scores, prob = mean(game_score == 300))
+Pr(10, n = 10)^10 # exact but rounds to 0.000003 
+```
+
+## Conclusion
+
+We can compute anything rather easily with enough draws from our model, so the *art* of QMSS is specifying a generative model for your phenomenon of interest (i.e. not bowling)
+
+. . .
+
+Make sure you can render your Quarto document to a PDF
