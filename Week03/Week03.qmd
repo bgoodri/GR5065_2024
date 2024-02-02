@@ -1,0 +1,336 @@
+---
+title: "Discrete Probability Distributions"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+---
+
+## Obligatory Disclosure
+
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+## Review of Last Week
+
+-   We defined the probability of knocking down $x \geq 0$ out of $n \geq x$ pins as $\Pr\left(x \mid n\right) = \log_{n + 2}\left(1 + \frac{1}{n + 1 - x}\right)$
+
+-   We used these probabilities to simulate $R$ frames of bowling
+
+-   We calculated many other probabilities from the simulations (modern) but also using the rules of probability (ancient)
+
+-   We used Bayes' Rule to calculate the probability that $X_1 = 8$ given that $X_2 = 2$, but that was not really Bayesian since there were no unobservables (e.g., $\beta$ in a regression)
+
+```{r}
+source("bowling.R") # if your working directory is Week03/
+rev(ls())[-4] # these were all defined in Week02
+```
+
+## Goals for This Week
+
+-   Learn the main characteristics of probability distributions
+
+-   Learn 3 parameterized discrete probability distributions
+
+-   Add an unknown parameter to our bowling model
+
+-   Apply Bayes' Rule to update our beliefs about an unknown parameter given data and a prior probability distribution
+
+## Expectation of a Discrete R.V.
+
+```{r}
+round(Pr(Omega), digits = 4) # What's the mode, median, & expectation?
+```
+
+::: incremental
+-   The mode is the element of $\Omega$ with the highest probability
+-   The median is the smallest element of $\Omega$ such that at least half of the cumulative probability is $\leq$ that element
+-   Expectation of a discrete random variable $X$ is defined as $$\mathbb{E}\left[X\right] = \sum_{x\in\Omega}\left[x\times\Pr\left(x\right)\right] \equiv \mu$$
+-   An expectation is a probability-weighted sum of $\Omega$
+:::
+
+## Calculating Expectations in Bowling
+
+-   How would you compute $\mathbb{E}\left[X_1\right]$ using the $R$ `frames`?
+
+. . .
+
+```{r}
+summarize(frames, mu_1 = mean(X_1))
+```
+
+-   How would you calculate it exactly using `Pr()`?
+
+. . .
+
+```{r}
+sum(Omega * Pr(Omega))
+```
+
+-   How would you calculate $\mathbb{E}\left[X_2\right]$ exactly using `joint_Pr`?
+
+. . .
+
+```{r}
+sum(Omega * colSums(joint_Pr)) # weight with marginal probabilities
+```
+
+## Bernoulli Distribution
+
+::: incremental
+-   The Bernoulli distribution over $\Omega=\left\{ 0,1\right\}$ depends on a (possibly unknown) probability parameter $\pi \in \left[0,1\right]$
+
+-   By introducing parameters, such as $\pi$, we can make probability distributions more flexible and thus more applicable to a wider variety of situations
+
+-   The probability that $x = 1$ is $\pi$ and the probability that $x = 0$ is $1 - \pi$, which can be written as a Probability Mass Function (PMF): $\Pr\left(x \mid \pi\right)=\pi^{x}\left(1-\pi\right)^{1-x}$
+
+-   What is the expectation of $X$?
+
+-   $\mu = 0 \times \pi^{0}\left(1-\pi\right)^{1-0} + 1 \times \pi^{1}\left(1-\pi\right)^{1-1} = \pi$
+:::
+
+## Binomial Distribution
+
+::: incremental
+-   A Binomial random variable can be defined as the sum of $n$ independent Bernoulli random variables all with the same $\pi$
+-   What is $\Omega$? What is the expectation of $X$?
+-   What is an expression for $\Pr\left(x \mid n=3, \pi\right)$? Hint: 8 cases
+    -   All succeed, so $\pi^3$ or all fail, so $\left(1 - \pi\right)^3$
+    -   1 succeeds and 2 fail $\pi^1 \left(1-\pi\right)^{3 - 1}$ with 3 orderings
+    -   2 succeed and 1 fails $\pi^2 \left(1-\pi\right)^{3 - 2}$ with 3 orderings
+    -   In general, $\Pr\left(x \mid n,\pi\right)={n \choose x}\pi^{x} \left(1-\pi\right)^{n-x} = \frac{n!}{\left(n - x\right)!x!} \pi^{x} \left(1-\pi\right)^{n-x}$
+:::
+
+## Probability of Four Strikes in Bowling
+
+```{r}
+frames <- mutate(frames, game = rep(1:(n() / 10), each = 10)) # type
+```
+
+-   How would you compute a probability of getting 4 strikes in a game of bowling (consisting of 10 frames) using `frames` ?
+
+. . .
+
+```{r}
+group_by(frames, game) |> 
+  summarize(four_strikes = sum(X_1 == 10) == 4, .groups = "drop") |> 
+  summarize(prob = mean(four_strikes))
+```
+
+-   How would you calculate it exactly using the binomial PMF?
+
+. . .
+
+```{r}
+c(easy = choose(10, 4) * Pr(10)^4 * (1 - Pr(10))^(10 - 4),
+  easier = dbinom(4, size = 10, prob = Pr(10)))
+```
+
+## Poisson Distribution for Counts
+
+::: incremental
+-   Let $n\uparrow \infty$ and let $\pi \downarrow 0$ such that $\mu = n\pi$ remains fixed. Since $\pi = \frac{\mu}{n}$, what is the limit of the binomial PMF, $\Pr\left(x \mid n, \mu\right)={n \choose x}\left(\mu / n\right)^{x} \left(1-\mu / n\right)^{n-x}$?
+
+    -   ${n \choose x}\pi^{x} = \frac{n!}{x!\left(n - x\right)!} \frac{\mu^x}{n^x} = \frac{n \times \left(n - 1\right) \times \left(n - 2\right) \times \dots \times \left(n - x + 1\right)} {n^x} \frac{\mu^x}{x!}$ $\rightarrow 1 \times \frac{\mu^x}{x!}$
+    -   $\left(1-\pi\right)^{n-x} = \left(1-\frac{\mu}{n}\right)^{n-x} = \left(1-\frac{\mu}{n}\right)^n \times \left(1-\frac{\mu}{n}\right)^{-x}$ $\rightarrow e^{-\mu} \times 1$
+    -   Thus, the limiting PMF is $\Pr\left(x \mid \mu\right) = \frac{\mu^xe^{-\mu}}{x!}$, which is the PMF of the Poisson distribution over $\Omega = \{0,\mathbb{Z}_+\}$
+:::
+
+## Parameterized Bowling Probabilities
+
+-   This is artificial because parameters are typically continuous
+-   Let $\Pr\left(x \mid n, \kappa\right) = \frac{\log_{n + 2 + \kappa}\left(1 + \frac{1}{n + 1 + \kappa - x}\right)}{1 - \log_{n + 2 + \kappa}\left(1 + \kappa\right)}$ where $\kappa \in \{0,\mathbb{Z}_+\}$ is a parameter. If $\kappa = 0$, we get the same PMF as last week.
+
+```{r}
+#| comment: ""
+#| echo: false
+round(t(sapply(c(`0` = 0, `1` = 1, `9` = 9), FUN = Pr, x = Omega, n = 10)), digits = 4)
+```
+
+. . .
+
+-   How could you calculate the first roll's expectation if $\kappa = 2$?
+
+. . .
+
+```{r}
+sum(Omega * Pr(Omega, n = 10, kappa = 2))
+```
+
+## How to Think about (a prior on) $\kappa$
+
+```{r, kappa}
+#| echo: false
+#| message: false
+library(ggplot2)
+tibble(kappa = 0:99,
+       EX = c(Omega %*% sapply(kappa, FUN = Pr, x = Omega, n = 10))) |> 
+  ggplot() +
+  geom_point(aes(x = kappa, y = EX)) + 
+  labs(x = expression(kappa),
+       y = "Conditional expectation of first roll")
+```
+
+. . .
+
+What expectation would you choose for yourself in a Poisson prior for $\kappa$?
+
+## Simulating $R$ Frames along with $\kappa$
+
+```{r}
+#| code-line-numbers: 1-3|4|5-7|8-11
+R <- 10^7  # practically infinite
+m <- 8.5   # expectation in the Poisson prior on kappa
+frames <-  # tibble with the results of R frames of bowling
+  tibble(kappa = rpois(n = R, m)) |> # draw kappa from prior
+  group_by(kappa) |> # like last weeek but now condition on kappa
+  mutate(X_1 = sample(Omega, size = n(), replace = TRUE, 
+                      prob = Pr(Omega, n = 10, first(kappa)))) |>
+  group_by(kappa, X_1) |>
+  mutate(X_2 = sample(Omega, size = n(), replace = TRUE, prob =
+                      Pr(Omega, 10 - first(X_1), first(kappa)))) |>
+  ungroup()
+```
+
+. . .
+
+```{r}
+print(frames, n = 7)
+```
+
+## Trivariate Probabilities
+
+```{r}
+#| code-line-numbers: 1-2|3|4|5-7|8-13
+trivariate_Pr <- array(0, dim = c(40, 11, 11), # stack of 40 matrices
+                       dimnames = list(0:39, Omega, Omega))
+for (kappa in 0:39) { # 39 is practically infnite when m = 8.5
+  Pr_kappa <- dpois(kappa, m)
+  for (x_1 in Omega) {
+    Pr_x_1 <- Pr(x_1, n = 10, kappa) # condition on kappa
+    Pr_both <- Pr_kappa * Pr_x_1     # probability of kappa and x_1
+    for (x_2 in 0:(10 - x_1)) { # have to +1 the indices
+      trivariate_Pr[kappa + 1, x_1 + 1, x_2 + 1] <-
+        Pr_both * Pr(x_2, n = 10 - x_1, kappa)
+    }
+  }
+}
+```
+
+. . .
+
+```{r}
+sum(trivariate_Pr)
+```
+
+. . .
+
+What, conceptually, is
+
+```{r}
+#| eval: false
+apply(trivariate_Pr, MARGIN = 1:2, FUN = sum)
+```
+
+## Bivariate Probability of $\kappa$ and $X_1$ {.smaller}
+
+```{r}
+#| echo: false
+knitr::kable(apply(trivariate_Pr, MARGIN = 1:2, FUN = sum), digits = 3)
+```
+
+## Marginal(ized) Probability of $X_1 \mid m$
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   How can `frames` yield $\Pr\left(X_1 = 8 \mid m, n = 10\right)$?
+
+. . .
+
+```{r}
+summarize(frames, prob = mean(X_1 == 8))
+```
+
+-   How would you calculate any $\Pr\left(\bcancel{\kappa} \bigcap x_1 \bigcap \bcancel{x_2} \mid m, n = 10\right)$ via `trivariate_Pr`?
+
+. . .
+
+```{r}
+X_1_Pr <- apply(trivariate_Pr, MARGIN = -c(1, 3), FUN = sum)
+round(X_1_Pr, digits = 4)
+```
+
+## Bayes' Rule for $\kappa$ Given $m$, $X_1 = 8$
+
+-   How would you compute the probability that $\kappa = 3$ given that $X_1 = 8$ using `frames` but regardless of $X_2$?
+
+. . .
+
+```{r}
+filter(frames, X_1 == 8) |> 
+  summarize(prob = mean(kappa == 3))
+```
+
+. . .
+
+```{r}
+#| eval: false
+library(ggplot2)
+filter(frames, X_1 == 8) |> # see next slide
+  ggplot() +
+  geom_bar(aes(x = as.factor(kappa), y = (..count..) / sum(..count..))) + 
+  labs(x = "kappa", y = "Posterior probability given X_1 = 8 and m = 8.5")
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| message: false
+#| echo: false
+library(ggplot2)
+filter(frames, X_1 == 8) |> 
+  ggplot() +
+  geom_bar(aes(x = as.factor(kappa), y = (..count..) / sum(..count..))) + 
+  labs(x = "kappa", y = "Posterior probability given x_1 = 8 and m = 8.5")
+```
+
+## Marginal(ized) Probability of a Frame {.smaller}
+
+```{r}
+frame_Pr <- apply(trivariate_Pr, MARGIN = 2:3, FUN = sum)
+knitr::kable(frame_Pr, digits = 3)
+```
+
+## Bayes' Rule Conditional on a Frame
+
+-   How would you compute the probability that $\kappa = 3$ given that $m = 8.5$, $X_1 = 8$, and $X_2 = 2$ using `frames`?
+
+. . .
+
+```{r}
+filter(frames, X_1 == 8, X_2 == 2) |> 
+  summarize(prob = mean(kappa == 3))
+```
+
+-   How would you calculate it exactly utilizing `trivariate_Pr` and `frame_Pr`?
+
+. . .
+
+```{r}
+trivariate_Pr["3", "8", "2"] / frame_Pr["8", "2"]
+```
+
