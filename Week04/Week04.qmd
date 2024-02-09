@@ -1,0 +1,410 @@
+---
+title: "Continuous Probability Distributions"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+---
+
+## Obligatory Disclosure
+
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+## Review of Last Week
+
+-   We defined the probability of knocking down $x \geq 0$ out of $n \geq x$ pins as $\Pr\left(x \mid n, \kappa\right) = \frac{\log_{n + 2 + \kappa}\left(1 + \frac{1}{n + 1 + \kappa - x}\right)}{1 - \log_{n + 2 + \kappa}\left(1 + \kappa\right)},$ where $\kappa$ is a non-negative integer parameter that has a Poisson prior with expectation $m > 0$ that reflects the bowler's inability
+
+-   We used these PMFs to simulate $R$ frames of bowling and $\kappa$
+
+-   We used Bayes' Rule to calculate the probability that $\kappa = 3$, given that $m = 8.5$, $x_1 = 8$, and $x_2 = 2$, but that was odd because parameters are typically taken to be continuous
+
+```{r}
+source("bowling.R") # if your working directory is Week04/
+ls()[-2] # these were all defined in Week03
+```
+
+## Goals for This Week
+
+-   Extend what we have learned to continuous random variables
+-   Apply Bayes' Rule when the parameters are continuous but the data are discrete
+-   Start to investigate when ancient calculations are feasible with continuous random variables
+
+## Cumulative Questions
+
+-   Using `frames`, how would you compute $\Pr\left(X_1 \leq 8\right)$?
+
+. . .
+
+```{r}
+summarize(frames, mean(X_1 <= 8))
+```
+
+-   How would you calculate it exactly using `Pr()`?
+
+. . .
+
+```{r}
+sum(Pr(0:8))
+```
+
+-   Thus, the probability that $X_1 \leq x$ can be derived from the Probability Mass Function (PMF) via the disjoint special case of the General Addition Rule
+
+## Cumulative Mass Functions (CMFs)
+
+-   If $\Pr\left(X = x \mid \boldsymbol{\theta}\right)$ is a PMF over a discrete $\Omega$ that may depend on some parameter(s) $\boldsymbol{\theta}$, then the CMF is $\Pr\left(X\leq x \mid \boldsymbol{\theta}\right)=\sum_{i = \min\{\Omega\} }^x\Pr\left(X = i \mid \boldsymbol{\theta}\right)$
+-   E.g., $\Pr\left(X\leq x \mid n, \kappa = 0\right) = 1 - \log_{n + 2}\left(n + 1 - x\right)$
+
+```{r}
+CMF <- 1 - log(10 + 1 - 0:10, base = 10 + 2) # assumes kappa is zero
+round(rbind(C = CMF, P = Pr(Omega)), digits = 4)
+```
+
+-   What is the exact probability that $X_1 \leq 8$ and $X_1 > 4$?
+
+. . .
+
+```{r}
+c(add = sum(Pr(5:8)), subtract = CMF[8 + 1] - CMF[4 + 1]) # have to +1
+```
+
+## Cumulative Density Functions (CDFs)
+
+-   Now let $\Omega$ be interval with an infinite number of points of zero width; e.g. $\Omega=\mathbb{R}$, $\Omega=\mathbb{R}_{+}$, $\Omega=\left(a,b\right)$, $\Omega=\left(0,1\right]$
+-   $\Pr\left(X\leq x\right)$ is called the Cumulative Density Function (CDF) from $\Omega$ to $\left[0,1\right]$. Thus, a CDF outputs a probability.
+-   No difference between CMFs and CDFs except emphasis on if $\Omega$ is discrete or continuous so we use $F\left(x \mid \boldsymbol{\theta}\right)$ for both
+
+## Example Cumulative Density Function
+
+```{r}
+#| echo: false
+library(ggplot2)
+ggplot() +
+  xlim(-3, 3) +
+  geom_function(fun = pnorm) +
+  labs(x = "x",
+       y = "Cumulative Density Function (CDF)")
+```
+
+## Probability Density Functions (PDFs)
+
+::: incremental
+-   $\Pr\left(a<X\leq x\right)=F\left(x \mid \boldsymbol{\theta}\right)-F\left(a \mid \boldsymbol{\theta}\right)$ as for discretes
+-   If $x=a+h$, $\frac{F\left(x \mid \boldsymbol{\theta}\right)-F\left(a \mid \boldsymbol{\theta}\right)}{x-a}=\frac{F\left(a+h \mid \boldsymbol{\theta}\right)-F\left(a \mid \boldsymbol{\theta}\right)}{h}$ is the slope
+-   If we let $h \rightarrow 0$, $\frac{F\left(a+h \mid \boldsymbol{\theta}\right)-F\left(a \mid \boldsymbol{\theta}\right)}{h}\rightarrow\frac{\partial F\left(a \mid \boldsymbol{\theta}\right)}{\partial a}\equiv f\left(x \mid \boldsymbol{\theta}\right)$ is the rate of change in $F\left(x \mid \boldsymbol{\theta}\right)$, i.e. the slope of the CDF
+-   The derivative of $F\left(x\right)$ with respect to $x$ is the PDF and is denoted $f\left(x\right) > 0$ because the CDF always increases
+-   $f\left(x\right)$ doesn't yield a probability but is used much like a PMF
+-   $F\left(x\mid\theta\right) = \int\limits_{-\infty}^x f\left(u \mid \theta\right)du$ is the area under the PDF to $x$
+:::
+
+## Example Probability Density Function
+
+```{r}
+#| echo: false
+library(ggplot2)
+ggplot() +
+  xlim(-3, 3) +
+  geom_function(fun = dnorm) +
+  labs(x = "x",
+       y = "Probability Density Function (PDF)")
+```
+
+## Discrete-Continuous Correspondence {.smaller}
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+| Concept                                 | Discrete $X$ and $Y$                                                                                                                                                                            | Continuous $X$, $Y$, and $\theta$                                                                                                                                               |
+|-----------------|-----------------------------|--------------------------|
+| Cumulative                              | $F\left(x \mid \theta\right) = \Pr\left(X \leq x \mid \theta\right)$                                                                                                                            | $F\left(x \mid \theta\right) = \Pr\left(X \leq x \mid \theta\right)$                                                                                                            |
+| Median                                  | $\arg\min_x:F\left(x \mid \theta\right) \geq \frac{1}{2}$                                                                                                                                       | $F^{-1}\left(\frac{1}{2} \mid \theta\right) = x$                                                                                                                                |
+| Rate of Change                          | $\Pr\left(x \mid \theta \right) = \frac{F\left(x \mid \theta \right) - F\left(x - 1 \mid \theta\right)}{x - \left(x - 1\right)}$                                                                | $f\left(x \mid \theta\right) = \frac{\partial}{\partial x}F\left(x \mid \theta \right)$                                                                                         |
+| Mode                                    | $\arg\max_x \Pr\left(x \mid \theta \right)$                                                                                                                                                     | $\arg\max_x f\left(x \mid \theta\right)$                                                                                                                                        |
+| $\mathbb{E}g\left(X \mid \theta\right)$ | $\sum_{x \in \Omega} g\left(x\right) \Pr\left(x \mid \theta\right)$                                                                                                                             | $\int_{\Omega} g\left(x\right) f\left(x \mid \theta \right) dx$                                                                                                                 |
+| Multiplication Rule                     | $\Pr\left(x \mid \theta \right) \Pr\left(y \mid x, \theta\right) = \\ \Pr\left(x \bigcap y \mid \theta\right)$                                                                                  | $f\left(x \mid \theta\right) f\left(y \mid x,\theta\right) = \\f\left(x \bigcap y\mid \theta\right)$                                                                            |
+| RHS of Bayes Rule                       | $\frac{\Pr\left(x \bigcap y\right)}{\Pr\left(\bcancel{x} \bigcap y\right)} = \frac{\Pr\left(x\right) \Pr\left(y \mid x\right)}{\sum_{x \in \Omega} \Pr\left(x\right) \Pr\left(y \mid x\right)}$ | $\frac{f\left(x \bigcap y\right)}{f\left(\bcancel{x} \bigcap y\right)} = \frac{f\left(x\right) f\left(y \mid x\right)}{\int_{\Omega} f\left(x\right) f\left(y \mid x\right)dx}$ |
+
+Can use WolframAlpha to take [derivatives](https://www.wolframalpha.com/input/?i=partial+derivative) or do (some) [definite integrals](https://www.wolframalpha.com/input/?i=definite+integral) but Columbia students can and should [download](https://cuit.columbia.edu/content/mathematica) the full Mathematica for free. Also, you can do symbolic stuff in Python, whether [locally](https://www.sympy.org/en/index.html) or [online](https://www.sympygamma.com/).
+
+## Variance of a Continuous R.V.
+
+-   Let $g\left(X\right) = \left(X - \mu\right)^2$ . Then, the expectation of $g$, $$\mathbb{E}g\left(X \mid \theta\right) = \int_{-\infty}^\infty \left(x - \mu\right)^2 f\left(x \mid \theta\right)dx = \sigma^2 \geq 0$$
+
+is the variance of $X \mid \theta$.
+
+-   $\sigma = \sqrt[+]{\sigma^{2}}$ is the standard deviation of $X$
+
+-   $\tau = \frac{1}{\sigma^2}$ is the precision of $X$
+
+## Normal Distribution
+
+-   Let $\Omega = \mathbb{R}$, $\mu \in \mathbb{R}$, $\sigma > 0$, and $f\left(x \mid \mu, \sigma\right) = \frac{e^{-\frac{1}{2} \left(\frac{x - \mu}{\sigma}\right)^2}}{\sigma \sqrt{2 \pi}}$
+-   `dnorm()` evaluates the PDF and `rnorm()` draws
+-   The Lancaster reading for next week parameterizes the normal distribution in terms of $\tau$, rather than $\sigma$ or $\sigma^2$ so $f\left(x, \mid \mu, \tau\right) = \sqrt{\frac{\tau}{2\pi}} e^{-\frac{\tau}{2} \left(x - \mu\right)^2}$
+
+## Uniform Distribution
+
+-   Standard uniform distribution for $X \in \Omega = \left[0,1\right]$ with $F\left(x\right) = x$ and $f\left(x\right) = 1$, so the PDF is horizontal
+-   Can draw from a standard uniform with [hardware](https://en.wikipedia.org/wiki/RDRAND) but `runif` uses pseudo-random software emulation for speed
+-   If $\Omega = \left[a,b\right]$, $F\left(x \mid a,b\right) = \frac{x - a}{b - a}$, $f\left(x \mid, a,b\right) = \frac{1}{b - a}$, and draw is `runif(n = 1, min = a, max = b)`
+
+## Beta Distribution
+
+-   Let $\Omega = \left[0,1\right]$ and $a,b>0$. $f\left(x \mid a, b\right) = \frac{x^{a - 1}\left(1 - x\right)^{b - 1}}{B\left(a,b\right)}$ w/ $B\left(a,b\right) = \int\limits_{0}^{1} t^{a - 1} \left(1 - t\right)^{b - 1} dt = \frac{1}{a + b - 1}\prod\limits_{i = 1}^\infty \frac{i \left(a + b + i - 2\right)}{\left(a + i - 1\right)\left(b + i - 1\right)}$
+
+-   `dbeta()` evaluates the PDF and `rbeta()` draws
+
+-   If necessary, you should evaluate $B\left(a,b\right)$ with `beta(a,b)`
+
+-   If $a = 1 = b$, then $f\left(x \mid a,b\right)$ is the standard uniform PDF
+
+-   $\mathbb{E}X = \frac{a}{a + b}$ and, iff $a,b > 1$, the mode is $\frac{a - 1}{a + b - 2}$ (the PDF is U-shaped if $0 < a,b < 1$, and thus does not have a mode)
+
+## Decision Theory w/ Random Variables
+
+To make the decision that maximizes expected utility:
+
+1.  Enumerate $D$ possible decisions $\{d_1, d_2, \dots, d_D\}$
+2.  Define a utility function $g\left(X, d,\dots\right)$ that also depends on unknown (and maybe some known) quantities, like $X$
+3.  Update your conditional probability distribution for all the unknowns given all the knowns using Bayes' Rule
+4.  Evaluate $\mathbb{E}g\left(X, d,\dots\right)$ for each of the $D$ decisions
+5.  Choose the decision that has the highest value in (4)
+
+## BioNTech / Pfizer Vaccine [Analysis](http://skranz.github.io//r/2020/11/11/CovidVaccineBayesian.html)
+
+-   Let $\pi_v$ be the probability of getting covid for someone in a RCT who is vaccinated (in late 2020), $\pi_c$ be the probability of getting covid for an unvaccinated person, and $\theta = \frac{\pi_v}{\pi_v + \pi_c}$, so the "Vaccine Effect" is $\mbox{VE}\left(\theta\right) = \frac{1 - 2\theta}{1 - \theta} = 1 - \frac{\pi_v}{\pi_c}$
+-   Prior for $\theta$ was Beta with $a = 0.700102$ and $b = 1$, which was chosen (poorly) so that the VE$\left(\frac{a}{a + b}\right) \approx 0.3$
+
+```{r}
+#| fig.show: "hide"
+#| message: FALSE
+library(dplyr)
+library(ggplot2)
+a <- 0.700102 
+b <- 1
+ggplot(tibble(theta = rbeta(n = R, shape1 = a, shape2 = b),
+              VE = (1 - 2 * theta) / (1 - theta))) + 
+  geom_density(aes(x = VE)) + xlim(-5, 1) # see next slide
+```
+
+## Implied Prior Distribution of $\mbox{VE}\left(\theta\right)$
+
+```{r, prior}
+#| cache: true
+#| echo: false 
+#| warning: false
+ggplot(tibble(theta = rbeta(n = 10^7, shape1 = a, shape2 = b),
+              VE = (1 - 2 * theta) / (1 - theta))) + 
+  geom_density(aes(x = VE)) + xlim(-5, 1)
+```
+
+## Posterior Distribution in Vaccine Trial
+
+```{r}
+#| fig-show: hide
+#| code-line-numbers: 1|2|3|4|5|6-13|14
+n <- 94; y <- 8 # what actually happened in the trial
+tibble(theta = rbeta(R, shape1 = a, shape2 = b),
+       Y = rbinom(R, size = n, prob = theta)) |> 
+  filter(Y == y) |> # condition on the data
+  mutate(VE = (1 - 2 * theta) / (1 - theta)) |> 
+  ggplot() + # see next slide
+  xlim(0, 1) + 
+  geom_density(aes(x = theta), color = "red") + 
+  geom_function(fun = ~dbeta(.x, shape1 = y + a, shape2 = n - y + b),
+                color = "black") +
+  geom_density(aes(x = VE), color = "green") +
+  labs(x = "",
+       y = "Posterior Density")
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+tibble(theta = rbeta(R, shape1 = a, shape2 = b),
+       Y = rbinom(R, size = n, prob = theta)) |> 
+  filter(Y == y) |> 
+  mutate(VE = (1 - 2 * theta) / (1 - theta)) |> 
+  ggplot() +
+  xlim(0, 1) + 
+  geom_function(fun = ~dbeta(.x, shape1 = y + a, shape2 = n - y + b),
+                color = "black") +
+  geom_density(aes(x = theta), color = "red") +  
+  geom_density(aes(x = VE), color = "green") +
+  labs(x = "",
+       y = "Posterior Density")
+```
+
+## Posterior Distribution of $\theta \mid a,b,n,y$ {.smaller}
+
+::: incremental
+-   $f\left(y \mid n, \theta\right) = {n \choose y} \theta^y \left(1 - \theta\right)^{n - y}$ , where (failure) success is getting covid when (un)vaccinated. $y = 8$ vaccinated people and $n - y = 86$ unvaccinated people got it.
+-   With a Beta prior on $\theta$, the marginalized probability of $y \mid a,b,n$ is beta-binomial since $$\Pr\left(y \mid a, b, n\right) = f\left(\bcancel{\theta} \bigcap y \mid a, b,n\right) = \\ \int_{0}^{1} \frac{\theta^{a - 1} \left(1 - \theta\right)^{b - 1} \times {n \choose y} \theta^y \left(1 - \theta\right)^{n - y}}{B\left(a,b\right)} d\theta = {n \choose y} \frac{B\left(a + y, b + n - y\right)}{B\left(a,b\right)}$$
+-   Posterior density is in the Beta family with $a^\ast = a + y$ and $b^\ast = b + n - y$ because $$f\left(\theta \mid a,b,n,y\right) = \frac{f\left(\theta \mid a,b\right) \times f\left(y \mid n, \theta\right)}{f\left(\bcancel{\theta} \bigcap y \mid a,b,n\right)} = \\ \frac{\theta^{a - 1} \left(1 - \theta\right)^{b - 1} / B\left(a,b\right) \times {n \choose y} \theta^y \left(1 - \theta\right)^{n - y}}{{n \choose y}B\left(a + y,b + n - y\right) / B\left(a,b\right)} = \frac{\theta^{a^\ast - 1}\left(1 - \theta\right)^{b^\ast - 1}}{B\left(a^\ast,b^\ast\right)}$$
+:::
+
+## VE with a (better) Normal Prior
+
+```{r}
+#| fig-show: hide
+#| warning: false
+#| code-line-numbers: 1|2|3|4|5|6-12|13
+tibble(VE = rnorm(R, mean = 0.3, sd = 0.15)) |> # now VE is primitive
+  filter(VE <= 1) |> # truncate
+  mutate(theta = (VE - 1) / (VE - 2),           # and theta is implied
+         Y = rbinom(n(), size = n, prob = theta)) |> 
+  filter(Y == y) |> # condition on data
+  ggplot() + # see next slide
+  xlim(0, 1) + 
+  geom_function(fun = dnorm, args = list(mean = 0.3, sd = 0.2)) +
+  geom_density(aes(x = theta), color = "red") + 
+  geom_density(aes(x = VE), color = "green") +
+  labs(x = "",
+       y = "Posterior Density")
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+#| warning: false
+tibble(VE = rnorm(R, mean = 0.3, sd = 0.15)) |> 
+  filter(VE <= 1) |> 
+  mutate(theta = (VE - 1) / (VE - 2),
+         Y = rbinom(n(), size = n, prob = theta)) |> 
+  filter(Y == y) |> 
+  ggplot() +
+  xlim(0, 1) + 
+  geom_function(fun = dnorm, args = list(mean = 0.3, sd = 0.2)) +  
+  geom_density(aes(x = theta), color = "red") + 
+  geom_density(aes(x = VE), color = "green") +
+  labs(x = "",
+       y = "Posterior Density")
+```
+
+## Bowling with Continuous Ability
+
+-   Before we used $\Pr\left(x \mid n, \kappa\right) = \frac{\log_{n + 1 + 1 + \kappa}\left(1 + \frac{1}{n + 1 + \kappa - x}\right)}{1 - \log_{n + 1 + 1 + \kappa}\left(1 + \kappa\right)}$ but this expression is valid if $1 + \kappa \geq 0$ is continuous. Now let$$\Pr\left(x \mid n, \theta\right) = 
+    \begin{cases}
+    \frac{\log_{n + 1 + 1 / \theta}\left(1 + \frac{1}{n + 1 / \theta - x}\right)}
+    {1 + \log_{n + 1 + 1 / \theta}\left(\theta\right)} \text{ if } \theta > 0 \\
+    \frac{\log_{n + 1 - 1 / \theta}\left(1 + \frac{1}{x - 1 / \theta}\right)}
+    {\log_{n + 1 - 1 / \theta}\left(1 + \theta\left(n + 1\right)\right)} \text{ if } \theta < 0 \\
+    \frac{1}{n} \text{ if } \theta = 0
+    \end{cases}$$
+-   If $\theta= 1$, this specializes to that in Week02 and Week03
+-   If $\theta < 0$, the probabilities are reversed compared to $\left|\theta\right|$
+
+## Thinking about a Prior on $\theta$
+
+```{r}
+#| echo: false
+E <- function(theta) {
+  sapply(theta, FUN = function(t) sum(Omega * Pr(Omega, n = 10, t)))
+}
+at <- 10^(1:8)
+ggplot() + 
+  scale_x_continuous(limits = c(-10^8, 10^8),
+                     breaks = c(-at, 0, at),
+                     trans = ggallin::pseudolog10_trans) + 
+  ylim(0, 10) + 
+  geom_function(fun = E) +
+  labs(x = "theta",
+       y = "Conditional Expectation of X_1 | theta")
+```
+
+## Marginal(ized) Probability in Bowling
+
+::: incremental
+-   Suppose we utilize a normal prior for a bowler's $\theta$ with mean $m$ and standard deviation $s > 0$
+
+-   The joint PDF of $\theta$ and $X$ is $f\left(\theta \bigcap x \mid n\right) = \frac{1}{s\sqrt{2\pi}} e^{-\frac{1}{2} \left(\frac{\theta - m}{s}\right)^2} \times \Pr\left(x \mid n, \theta\right)$
+
+-   The marginal(ized) PMF of $X$ is $$\Pr\left(x \mid n\right) = f\left(\bcancel{\theta} \bigcap x \mid n\right) =
+    \int_{-\infty}^\infty f\left(\theta \bigcap x \mid n\right) d\theta$$ but we cannot obtain the antiderivative to evaluate the area under the curve (so says the [Risch algorithm](https://en.wikipedia.org/wiki/Risch_algorithm))
+:::
+
+## $\Pr\left(\theta \bigcap x_1 \mid n = 10\right)$ Graphed
+
+```{r}
+m <- 0.5; s <- 2 # for normal prior on theta
+bivariate <- function(theta, x_1) 
+  dnorm(theta, m, s) * Pr(x_1, n = 10, theta)
+```
+
+```{r}
+#| echo: false
+ggplot() +
+  xlim(-5, 7.5) +
+  geom_function(fun = ~bivariate(.x, x_1 = 10), color = "black") +
+  geom_function(fun = ~bivariate(.x, x_1 = 8), color = "red") +
+  geom_function(fun = ~bivariate(.x, x_1 = 4), color = "green") +
+  labs(x = "theta",
+       y = "Bivariate Density")
+```
+
+. . .
+
+```{r}
+marginal <- integrate(bivariate, lower = -Inf, upper = Inf, x_1 = 8)$value
+marginal # area underneath red curve via tiny trapezoids basically
+```
+
+## Modern Computations
+
+-   How would you compute $\Pr\left(8 \mid n = 10\right)$ the modern way?
+
+. . .
+
+```{r, modern}
+#| cache: true
+R <- 10^6
+frames <- tibble(theta = rnorm(R, m, s)) |> # draw from normal prior
+  rowwise() |>  # like group_by where each row is its own group
+  mutate(X_1 = # draw first roll conditional on realization of theta
+         sample(Omega, size = 1, prob = Pr(Omega, n = 10, theta))) |>
+  ungroup()
+```
+
+. . .
+
+```{r}
+summarize(frames, marg_prob = mean(X_1 == 8))
+```
+
+-   How would you graph $f\left(\theta \mid n = 10, X_1 = 8\right)$?
+
+. . .
+
+```{r}
+#| eval: false
+filter(frames, X_1 == 8) |> 
+  ggplot() + # plot on next slide
+  geom_density(aes(x = theta)) +
+  geom_function(fun = dnorm, args = list(mean = m, sd = s), color = "red")
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+filter(frames, X_1 == 8) |> 
+  ggplot() +
+  geom_density(aes(x = theta)) +
+  geom_function(fun = dnorm, args = list(mean = m, sd = s), color = "red")  
+```
+
