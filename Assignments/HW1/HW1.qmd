@@ -1,0 +1,197 @@
+---
+title: "GR5065 Homework 1"
+format: 
+  pdf:
+    number-sections: true
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        \usepackage{tabstackengine}
+        \usepackage{xcolor}
+        \usepackage{rotating}
+        \usepackage{cancel}
+pdf-engine: xelatex
+editor: visual
+execute: 
+  echo: true
+keep-tex: true
+---
+
+```{=tex}
+\newcommand\blackcard[2]{%
+  \begingroup\fboxsep=0pt\relax
+  \fbox{\tabbedCenterstack{%
+  \scriptsize$#2$ && \\&\makebox[10pt]{#1}&\\&
+  &\rotatebox[origin=c]{180}{\scriptsize$#2$}}}%
+  \endgroup}
+\newcommand\redcard[2]{%
+  \begingroup\fboxsep=0pt\relax
+  \fbox{\color{red}\tabbedCenterstack{%
+  \scriptsize$#2$ && \\&\makebox[10pt]{#1}&\\&&\rotatebox[origin=c]{180}{\scriptsize$#2$}}}%
+  \endgroup}
+```
+# Poker
+
+This problem is about one instance of the game poker that was played last year. Playing poker well requires years of dedication, but you are not being asked to play poker. In contrast, analyzing a single instance of poker only requires that you apply principles of probability and decision theory because you will be told the relevant rules, facts, and strategies. And you can also ask about anything you do not understand on Ed Discussion.
+
+A deck consists of 52 shuffled cards, of which there are 13 cards (2, 3, 4, 5, 6, 7, 8, 9, 10, Jack, Queen, King, Ace) ordered from lowest to highest for each of four suits (Spades, Hearts, Diamonds, Clubs). In No Limit Texas Hold 'Em poker, each player is dealt two cards (known as "hole cards" or a "hand") face down so that only they can see (or use) them. Thus, there are ${52 \choose 2} = \frac{52 \times 51}{2} = 1326$ possible combinations of hole cards that a person could be dealt and one round of betting after the hole cards are dealt
+
+Five cards eventually get placed face up (known collectively as the "board") in the middle of the table that any player can utilize, so there are ${50 \choose 5} = 2,118,760$ boards given the two hole cards that each player can see. In between, there are three more rounds of betting. A person wins all of the poker chips that have been previously bet (known as the "pot") if either all of the other players fold (i.e. give up) or they beat all the remaining players at "showdown". At showdown, each remaining player forms a collection of seven cards as the union of their two hole cards and the five cards in the middle and then selects the best five-card subset, where more rare events beat more common events.
+
+The rules of No Limit Texas Hold 'Em are explained in more (and excessive) detail at
+
+<https://en.wikipedia.org/wiki/Texas_hold_%27em>
+
+Unfortunately, poker involves a lot of jargon and words that do not even make sense in English. If you prefer an explanation in Chinese, you could look at
+
+<https://zh.wikipedia.org/zh/%E5%BE%B7%E5%B7%9E%E6%92%B2%E5%85%8B>
+
+The instance of poker we are considering in this problem was filmed at
+
+<https://youtu.be/2UhdlMvQSvg>
+
+which you should watch the first 21:45 of at 1.5x speed (after which it devolves into a champagne toast). This took place primarily between Wesley Fei (in sunglasses) and Tom Dwan (wearing black). In this game, people are allowed to leave at any time and exchange their plastic poker chips for their cash equivalent, so you can assume that each player's utility function is equal to the value of poker chips that they end up with at the end of a hand.
+
+Before the video starts and before any hole cards were dealt,
+
+-   The player to Tom's right was required to put \$3,000 worth of chips into the pot as the ante, but this is not considered a bet
+
+-   The player two seats to Tom's right --- whose name is Doug Polk --- was required to put \$500 worth of chips into the pot as the small blind bet
+
+-   The player to Tom's right was also required to put an additional \$1,000 worth of chips into the pot as the big blind bet
+
+-   Tom followed a widespread but informal convention of betting \$2,000 worth of chips before being dealt his hole cards, which is known as a straddle bet.
+
+Thus, there was \$6,500 worth of chips in the pot before the first player to Tom's left had to make the initial decision. The turns then proceed leftward. When it is a player's turn, they can either "fold" (in which case they get no more turns and cannot win the pot), "call" (by betting an amount equal to the previous bet), or "raise" (by betting an amount at least \$2,000 more than the previous bet). If there have not been any previous bets in a round, then a player can "check" (which is equivalent to betting zero chips).
+
+At about 10 seconds into the video, Doug announces that he saw Wesley's hole cards, which is a very atypical situation that gives Doug a tremendous information advantage over Wesley. In the rare case where person B sees person A's hole cards, the convention is for B to let everyone know in order to give A an opportunity to fold before losing any additional money on that hand.
+
+The main rule to know in poker is what beats what at showdown. The most relevant ones in this hand (from rarest to least rare) are:
+
+1.  **Flush**: 5 out of 7 cards of the same suit, such as \redcard{A}{\diamondsuit} \redcard{K}{\heartsuit} as hole cards with a board of \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit} \redcard{8}{\diamondsuit} \redcard{5}{\diamondsuit} \redcard{6}{\diamondsuit}. The commentator indirectly mentions this possibility at about 4 minutes into the video when the first three cards in the middle were revealed as \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit} \redcard{8}{\diamondsuit}.
+
+2.  **Straight**: 5 out 7 cards of consecutive values but not the same suit, such as \blackcard{9}{\spadesuit} \blackcard{7}{\spadesuit} as hole cards with a board of \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit} \redcard{8}{\diamondsuit} \redcard{5}{\heartsuit} \blackcard{6}{\clubsuit}. Tom mentions that Wesley could have this at 10:50 into the video.
+
+3.  **Three of a Kind**: 3 out of 7 cards of the same value and no other cards of the same value, such as \redcard{9}{\heartsuit} \redcard{8}{\heartsuit} as hole cards with a board of \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit} \redcard{8}{\diamondsuit} \redcard{5}{\heartsuit} \blackcard{6}{\clubsuit}. A three-of-a-kind with two cards of the same value in the middle and another of that same value as a hole card is also known as "trips". Tom repeatedly mentions that Wesley could have this; e.g. at 12:25 into the video.
+
+4.  **Two Pair**: 2 out of 7 cards of the same value and 2 of the remaining 5 cards of the same value, such as \redcard{A}{\diamondsuit} \blackcard{A}{\clubsuit} as hole cards with a board of \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit} \redcard{8}{\diamondsuit} \redcard{5}{\heartsuit} \blackcard{6}{\clubsuit}. In the event that two or more players both have two pair, the player with the pair of cards that have the higher value wins the pot. Tom mentions that Wesley could have this at 11:37 into the video.
+
+5.  **One Pair**: 2 out of 7 cards of the same value with none of the remaining 5 cards of the same value, such as \redcard{A}{\diamondsuit} \redcard{K}{\heartsuit} as hole cards with a board of \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit} \redcard{8}{\diamondsuit} \redcard{5}{\heartsuit} \blackcard{6}{\clubsuit}. Wesley actually has this.
+
+The RFID mechanism that is built into the table does not register Tom's hole cards like it does for the rest of the players, so **you should pause the video at about ten minutes in** and think about what hole cards Tom could have with non-negligible probability, in light of all that has happened.
+
+## Seat Positions
+
+In any hand, the player in the small blind position and the big blind position are at a major disadvantage because they have to put chips into the pot without first seeing their hole cards. In other words, the expected value of playing from the small blind or big blind position is negative. However, after each hand is over, the small blind and big blind positions rotate clockwise so that everyone at the table is forced to be the small blind or big blind only $\frac{1}{n}$-th of the time, where $n$ is the number of players at the table (seven in this case).
+
+-   Explain how the clockwise rotation essentially marginalizes over the disadvantage of being in the small blind or big blind position and gives everyone at the table an expectation of zero on a hand, irrespective of where their seat is.
+
+## Pair Probability
+
+-   Irrespective of any betting, what is the probability of being dealt two hole cards that have the same value (i.e. a pair)? Show your work.
+
+The two players to Tom's left fold and then a player named Hank who has \redcard{A}{\heartsuit} \blackcard{8}{\clubsuit} raises the bet to \$7,000, which brings the pot to \$13,500. Suppose that a player in Hank's situation would always raise if he had a pair but would sometimes raise with good cards even if they had different values, so that the marginal probability of Hank betting in this situation is $\frac{1}{3}$. The next player folds, which brings the action to Wesley who has \redcard{A}{\diamondsuit} \redcard{K}{\heartsuit}.
+
+-   From Wesley's perspective, roughly what is the probability that Hank was a pair, given that Hank raised? You should refer to Bayes' Rule, but exact calculations are not essential for this question.
+-   Explain how the probability of being dealt a pair is Frequentist but the probability of Wesley thinking that Hank has a pair, given that Hank raised, is Bayesian.
+
+## Wesley's First Bet
+
+The blinds and straddle are considered to be first bet. Hank's raise is the second bet. Since Wesley has \redcard{A}{\diamondsuit} \redcard{K}{\heartsuit}, which is the fourth or fifth best possible combination of hole cards, it would not be a surprise for Wesley to raise Hank's raise, which is known as a "three-bet". However, Wesley would also raise with many combinations of hole cards that are somewhat worse than \redcard{A}{\diamondsuit} \redcard{K}{\heartsuit} because Wesley has the significant advantage of getting to decide *last* whether to fold, call, or raise in all *subsequent* rounds of betting.
+
+-   At around 1:00 into the video, the screen asserts that Wesley has a 68% chance to win at showdown and Hank has a 32% chance to win at showdown. The players cannot see that, but explain why the screen's calculation is both misleading to the audience and conceptually wrong.
+
+In this situation, there is a further complication in that Doug says he knows Wesley's hole cards. Wesley either seems to be caught off-guard, or does not fully believe Doug, or figures that Doug cannot do much with this information from the small blind position. The player who makes the small blind bet would ordinarily fold over 90% of possible combinations of hole cards at the first opportunity if the bet has been raised twice previously. This is because the player in the small blind position has the significant disadvantage of having to decide *first* whether to check or raise in all *subsequent* rounds of betting. In other words, while Doug has a tremendous information advantage over Wesley, Doug is at a major sequencing disadvantage relative to everyone else on this hand. At 22 seconds into the video, Wesley says to Doug "Fine, fine. You're going to fold, right?", to which Doug responds "I haven't looked at my hand."
+
+-   Wesley does raise to \$30,000, which takes the pot from \$13,500 to \$43,500. What probability of Wesley winning the pot is the "breakeven value", which is to say what probability of Wesley winning implies that the expected dollar value of Wesley's \$30,000 bet is zero (i.e. neither positive nor negative)?
+
+-   How does this concept of a breakeven value relate to the plot that we looked at in Week01 regarding the PredictIt market's probability of Joe Biden winning his reelection?
+
+## Wesley's Second Bet
+
+Doug folds, as does the person to his left, which means it is Tom's turn and first opportunity to make a voluntary decision. Tom raises to \$100,000 (a "four-bet", inclusive of the \$2,000 straddle), which takes the pot to \$141,500. Tom would have folded the vast majority of combinations of hole cards he could have been dealt. But Tom presumably would have merely called Wesley's bet if he had a pair with a small value or two cards of the same suit but adjacent small values. So, a raise would tend to suggest hole cards that are a bit better than that.
+
+-   The commentator remarks at about 2:05 in the video that "Tom Dwan $\dots$ has been playing a pretty low-variance style." What does this mean and why do you think the commentator feels it is worth mentioning at this point?
+
+Hank then folds because his \redcard{A}{\heartsuit} \blackcard{8}{\clubsuit} is expected to be worse than whatever Wesley or Tom have, given their bets. Wesley raises again (a "five-bet") to \$275,000, which brings the pot to \$387,000. Five-bets are usually polarized, in the sense that it means your hole cards are either very good (high pairs or an Ace with a King or perhaps an Ace and a Queen of the same suit) or among the worst combination of hole cards that you were previously willing to three-bet with. For example, if Wesley had a nine and an eight of the same suit or else an eight and a seven of the same suit, he would definitely three-bet and might five-bet with probability $\frac{1}{2}$ and call with probability $\frac{1}{2}$ (which can be achieved, for example, by five-betting with spades or hearts and calling with diamonds or clubs).
+
+-   Irrespective of any betting, what is the probability of being dealt a nine and an eight of the same suit or dealt an eight and a seven of the same suit?
+-   Under the above assumptions --- but ignoring the fact that Doug saw Wesley's hole cards --- what is the main obstacle to computing the probability that Wesley has an eight and an adjacent card of the same suit, given that he three-bets and five-bets?
+
+## Post-Flop Action
+
+Tom calls Wesley's five-bet, which brings the pot to \$562,000 and ends the first round of betting. Next, three cards (known as the flop) are turned over in the middle, which are
+
+\redcard{8}{\diamondsuit} \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit}
+
+Tom has to act first, and he checks, which is what he would do irrespective of what hole cards he has and Wesley bets \$125,000, which is what he would do irrespective of what hole cards he has and brings the pot to \$687,000.
+
+-   At about 5:45 into the video, the commentator says "Whatever Dwan called with pre-flop I can't imagine him folding on a 8-8-3 board to a \$125,000 bet." How does the concept of a "breakeven value" mentioned earlier help substantiate what the commentator is saying about the near certainty that Tom calls (which he does bringing the pot to \$812,000)?
+
+Next, one card (known as the turn) is turned over in the middle, which is the \redcard{5}{\heartsuit}. Again, Tom checks and again Wesley bets, this time \$350,000, which brings the pot to \$1,200,000. Tom calls, bringing the pot to \$1,550,000.
+
+Finally, one more card (known as the river) is turned over in the middle, which is the \blackcard{6}{\clubsuit}. Tom checks and Wesley bets however many chips Tom has left, which is \$786,000 and brings the pot to \$2,300,000.
+
+At this point, Tom verbalizes a subset of what he is thinking. Tom mentions that Wesley could have been dealt a nine and a seven, in which case Wesley would now have a straight, but Tom knows it is very unlikely that Wesley would have five-bet with a hand as weak as that, even if the two cards were of the same suit. They same reasoning would apply even more to the remote possibility that Wesley now has a straight with a seven and a four as hole cards.
+
+However, if Wesley had an eight and adjacent card of the same suit, then five-betting is more plausible, and furthermore Wesley's post-flop bets with three-of-a-kind would completely make sense. It would also make sense for Wesley to have bet this way if he had a pair of Aces and similarly with a pair of Kings. But the optimal poker strategy is not to bet aggressively on the river only when you have among the very best five-card subsets of the set formed by your two hole cards and the board. You also have to "bluff" with some probability when you have hole cards that will surely lose at showdown, which is what Wesley is doing with only the pair of eights of the board. Tom eventually calls and wins the pot.
+
+After the hand, each player was interviewed. The first interview was by Veronica Brill, who also plays poker sometimes, but unfortunately did not ask Tom any questions about strategy or probability. The second interview was by Joe Ingram. At about 19:30 into the video, Wesley says:
+
+> I think I played perfect and \[Tom\] turned his \[pair of\] Queens into a bluff-catcher because I could have \[a pair of\] Aces or Kings $\dots$ I exposed my hand pre-flop to Doug Polk, but I mean Ace-King, Aces, or Kings are pretty strong hands \[so\] I would do the same exact thing I did \[i.e three-betting\] $\dots$ But I just kind of feel like it may affect Tom's decision a little bit. Maybe if I don't expose my hand, maybe I can bluff him out. $\dots$ Ace-King is the best hand to bluff \[because you\] block \[a pair of\] Aces and Kings, and he has the Queens so he can only catch the \[Ace-King\] bluff.
+
+By the last part, Wesley means that because he has an Ace and a King as hole cards, it is considerably less likely that Tom has a pair of Aces or a pair of Kings, while Wesley could easily have a pair of Aces or a pair of Kings himself, in which case Tom would lose at showdown if he had a pair of Queens (or an even lower pair). Thus, Tom would have folded if he thought it was sufficiently probable that Wesley had a pair of Aces or a pair of Kings.
+
+-   Do you think that if Wesley had *not* exposed his hole cards to Doug --- but all the previous betting were the same as in the video --- that Tom would have folded when Wesley goes all-in on the river? Explain your reasoning with reference to conditional probability.
+
+## Alternative
+
+Suppose Tom merely called Wesley's initial three-bet of \$30,000, rather than raising to \$100,000.
+
+-   Explain why Hank would have surely called as well with his \redcard{A}{\heartsuit} \blackcard{8}{\clubsuit}, which would have ended the first round of betting without giving Wesley an opportunity to five-bet.
+
+-   Thus, three players would have been competing for a pot that had \$94,500 in it when the flop came as \redcard{8}{\diamondsuit} \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit}. The order of decisions in each round would be Tom, Hank, Wesley. Speculate as to how all the rest of the action would have proceeded, based on your understanding of conditional probability and decision theory.
+
+# Poisson-Gamma Conjugacy
+
+The Poisson Probability Mass Function (PMF) from Week03 is$$\Pr\left(x \mid \mu\right) = \frac{\mu^xe^{-\mu}}{x!},$$ where $X$ is a non-negative integer.
+
+## Joint Probability of $N$ Observations
+
+Suppose you have $N$ Poisson random variables, $X_1, X_2, \dots, X_N$ that are independent of each other and all have the same expectation, $\mu$ . Write and simplify an expression for the probability (given $\mu$) that $X_1 = x_1 \bigcap X_2 = x_2 \bigcap \dots \bigcap X_N = x_N$.
+
+## Sum of $N$ Poisson Random Variables
+
+The sum of $N$ (which is assumed to be fixed) independent Poisson random variables that each has expectation $\mu$ is a single Poisson random variable with expectation $N\mu$, which could be proven using a similar argument that we gave in Week03 to derive the Poisson distribution from the binomial distribution.
+
+Instead, let's simulate random variables and show that they are consistent with this above fact. Execute
+
+```{r}
+N <- 5
+mu <- 1.234
+R <- 10^6
+```
+
+Create a tibble with `R` rows that has $N = 5$ columns where each column contains `R` draws from a Poisson distribution that has expectation $\mu$. Then, form another column called `S` that is the sum of these $N = 5$ Poisson random variables and create a histogram of `S` by calling the `geom_bar(aes(x = S, y = ..prop..))` function in the ggplot2 package.
+
+Next, create a second tibble that also has `R` rows but only one column, which contains draws from a Poisson distribution that has expectation $N\mu$. Create a histogram from it and show that it is virtually identical to the previous histogram, as is implied by the above fact.
+
+## Gamma Prior and Posterior Distribution
+
+One implication of the previous subproblem is that if we have $N$ (not necessarily $5$) independent observations on a count variable that are assumed to all be distributed Poisson with expectation $\mu$ (not necessarily $1.234$), then we can think of the sum as a single Poisson random variable whose Probability Mass Function (PMF) is$$\Pr\left(s \mid N, \mu\right) = \frac{\left(N\mu\right)^se^{-N\mu}}{s!}$$
+
+where $s = \sum_{i = 1}^N x_i$ .
+
+Suppose your prior distribution for $\mu$ has the following Probability Density Function (PDF)$$f\left(\mu \mid a, b\right) = \frac{b^a}{\Gamma\left(a\right)} \mu^{a - 1} e^{-b \mu},$$ where $a > 0$, $b > 0$, and $\Gamma\left(a\right) = \int_0^\infty t^{a - 1} e^{-t}dt = \frac{e^{-\gamma a}}{a} \prod\limits_{i = 1}^\infty \frac{e^{\frac{a}{i}}}{1 + \frac{a}{i}}$ is a special function known as the Gamma function that could be evaluated in R by calling `gamma(a)` although that is not necessary for this problem. This prior distribution is known as the Gamma family and you can draw from it in R by calling `rgamma(R, shape = a, rate = b)`.
+
+Moreover, section 5.2 of [Bayes Rules]{.underline} shows that a Gamma prior is naturally conjugate with the Poisson likelihood, which implies that the posterior distribution given $a$, $b$, $N$ and $s$ will also be in the Gamma family but with shape $a^\ast = a + s$ and rate $b^\ast = b + N$ .
+
+Execute in R
+
+```{r}
+a <- 1.25
+b <- 1.75
+s <- 14
+```
+
+Now create a tibble that has `R` rows and two columns. The first column should be called `mu` and contain `R` realizations from this Gamma prior distribution. The second column should be called `S` and contain realizations from a Poisson distribution with expectation `N * mu` . Now, condition on the event that the realized Poisson random variable is $s = 14$ and plot the conditional density function of the draws of `mu` using the `geom_density` function in the ggplot2 package. Overlay a call to `geom_function(fun = dgamma, args = list(shape = a + s, rate = b + N), color = "red")` to show that these imply the same posterior density.
