@@ -1,0 +1,220 @@
+---
+title: "Recitation for Week04"
+author: "Apoorva Joshi"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+---
+
+## Setup for Recitation
+
+-   Open the GR5065_2024 "project" in RStudio, click the blue arrow under the Git tab to pull, change the working directory to Week04, execute `source("bowling.R")`
+
+-   Recall from Thursday that now $\theta \in \mathbb{R}$ is the parameter: $$\Pr\left(x \mid n, \theta\right) = 
+    \begin{cases}
+    \frac{\log_{n + 1 + 1 / \theta}\left(1 + \frac{1}{n + 1 / \theta - x}\right)}
+    {1 + \log_{n + 1 + 1 / \theta}\left(\theta\right)} \text{ if } \theta > 0 \\
+    \frac{\log_{n + 1 - 1 / \theta}\left(1 + \frac{1}{x - 1 / \theta}\right)}
+    {\log_{n + 1 - 1 / \theta}\left(1 + \theta\left(n + 1\right)\right)} \text{ if } \theta < 0 \\
+    \frac{1}{n} \text{ if } \theta = 0
+    \end{cases}$$ If $\theta = 1$, we get the same PMF for bowling as in Week02
+
+```{r}
+#| echo: false
+source("bowling.R")
+set.seed(123)
+```
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+## 1 Frame of Bowling with $\theta$ (ability)
+
+```{r}
+m <- 0.5; s <- 2; (theta <- rnorm(1, mean = m, sd = s))
+```
+
+. . .
+
+The conditional probabilities are admissible, given $\pm \theta$
+
+```{r}
+round(c(Pr(Omega, n = 10,  theta), total = sum(Pr(Omega, n = 10,  theta))), 4)
+round(c(Pr(Omega, n = 10, -theta), total = sum(Pr(Omega, n = 10, -theta))), 4)
+```
+
+so draw the results of the two rolls
+
+```{r}
+x_1 <- sample(Omega, size = 1, prob = Pr(Omega, n = 10, theta))
+x_2 <- sample(Omega, size = 1, prob = Pr(Omega, n = 10 - x_1, theta))
+```
+
+## $R$ Frames of Bowling with $\theta$ (ability)
+
+On your own, draw $R = 100,000$ frames of bowling, along with draws of $\theta$ from a normal prior with parameters $m$ and $s$
+
+. . .
+
+```{r, frames}
+#| code-line-numbers: 1-2|3|4-7|8
+#| message: false
+frames <-
+  tibble(theta = rnorm(10^5, mean = m, sd = s)) |>
+  rowwise() |> # like group_by where each row is its own group
+  mutate(X_1 = sample(Omega, size = 1, prob = Pr(Omega, 10, theta)),
+         X_2 = sample(Omega, size = 1, prob = 
+                        Pr(Omega, n = 10 - X_1, theta))) |> 
+  ungroup()
+```
+
+. . .
+
+```{r}
+print(frames, n = 6) # first column prints rounded but has ~16 decimals
+```
+
+## Database-Like Queries
+
+-   How would you compute the probability that $X_1 = 8$ and $X_2 = 2$, irrespective of $\theta$ using `frames`?
+
+. . .
+
+```{r}
+summarize(frames, prob = mean(X_1 == 8 & X_2 == 2))
+```
+
+-   How would you compute the expectation of $\theta$ given that $X_1 = 8$ and $X_2 = 2$ using `frames`?
+
+. . .
+
+```{r}
+filter(frames, X_1 == 8, X_2 == 2) |> 
+  summarize(expectation = mean(theta)) # larger than prior expectation
+```
+
+## What Is the Area Under this Curve?
+
+```{r}
+#| message: false
+library(ggplot2)
+likelihood <- function(theta, x_1, x_2) {
+  Pr(x_1, n = 10, theta) * Pr(x_2, n = 10 - x_1, theta)
+}
+trivariate_density <- function(theta, x_1, x_2) {
+  dnorm(theta, mean = m, sd = s) * likelihood(theta, x_1, x_2)
+}
+ggplot() + xlim(-5, 10) + ylab("Trivariate Density") +
+  geom_function(fun = trivariate_density, args = list(x_1=8, x_2=2))
+```
+
+## Numerical Integration (quadrature)
+
+-   How would you use the `integrate` function to calculate $f\left(\bcancel{\theta} \bigcap 8 \bigcap 2 \mid m, s, n = 10\right)$?
+
+. . .
+
+```{r}
+(marginal <- integrate(trivariate_density, lower = -Inf, upper = Inf, 
+                       x_1 = 8, x_2 = 2)$value) # same as from frames
+```
+
+-   How would you reuse `marginal` to compute the posterior expectation, $\mathbb{E}\theta \mid m, n = 10, X_1 = 8, X_2 = 2$?
+
+. . .
+
+```{r}
+h <- function(theta, x_1, x_2) theta * trivariate_density(theta, x_1, x_2)
+# essentially the same as from frames but deterministic and more accurate
+integrate(h, lower = -Inf, upper = Inf, x_1 = 8, x_2 = 2)$value / marginal
+```
+
+## Marginal Probability of a Frame
+
+Do this:
+
+```{r}
+frame_Pr <- matrix(0, nrow = 11, ncol = 11, dimnames = list(0:10,0:10))
+for (x_1 in Omega) for (x_2 in 0:(10 - x_1)) {
+  frame_Pr[x_1 + 1, x_2 + 1] <- # have to +1 the indices
+    integrate(trivariate_density, lower = -Inf, upper = Inf, 
+              x_1 = x_1, x_2 = x_2, rel.tol = 1e-8)$value
+}
+```
+
+. . .
+
+```{r}
+sum(frame_Pr)
+```
+
+```{r}
+#| eval: false
+View(frame_Pr) # see next slide
+```
+
+##  {.smaller}
+
+```{r}
+#| echo: false
+#| message: false
+library(knitr)
+library(kableExtra)
+options("kableExtra.html.bsTable" = TRUE)
+options(scipen = 5)
+options(knitr.kable.NA = "")
+tmp <- as.data.frame(frame_Pr)
+for (i in 1:ncol(tmp)) 
+  tmp[,i] <- cell_spec(round(tmp[,i], digits = 4), "html", 
+                       bold = tmp[,i] == 0,
+                       color = ifelse(tmp[,i] == 0, "red", "black"))
+kable(tmp, align = 'c', escape = FALSE) |>
+    kable_styling("striped", full_width = FALSE)
+```
+
+## Individual Exercise
+
+```{r}
+frames <- mutate(frames, game = rep(1:(n() / 10), each = 10))
+```
+
+-   Apply "World Bowling" [scoring](https://en.wikipedia.org/wiki/Ten-pin_bowling#World_Bowling_scoring) rules using `case_when`
+
+    -   A strike --- knocking down all 10 pins on the *first* roll --- is worth 30 points
+
+    -   A spare --- knocking down all 10 pins over two rolls in the same frame --- is worth 10 points, plus the number of pins knocked down on the first roll of that same frame
+
+    -   Otherwise, points $=$ pins knocked down that frame
+
+-   Use `geom_density` to plot the prior density of the game's score, which is the sum of the points over the 10 frames
+
+## Answer to Individual Exercise
+
+```{r}
+mutate(frames, points = 
+         case_when(X_1 == 10 ~ 30,
+                   X_1 + X_2 == 10 ~ 10 + X_1,
+                   TRUE ~ X_1 + X_2)) |> 
+  group_by(game) |> 
+  summarize(score = sum(points), .groups = "drop") |> 
+  ggplot() +
+  geom_density(aes(x = score))
+```
+
+## Conclusion
+
+-   Ancient Bayesian analysis with continuous parameters requires definite integrals, which often are not elementary but can be computed numerically in one dimension
+
+-   However, this medieval Bayesian analysis is hard to do accurately in multiple dimensions, i.e. when there are multiple parameters, which there usually are in social science research
+
+-   Modern Bayesian analysis with continuous parameters substitutes $R$ draws for definite integration
