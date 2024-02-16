@@ -1,0 +1,328 @@
+---
+title: "Bayesian Principles"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+---
+
+## Obligatory Disclosure
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+## Review of Last Week
+
+$$
+f\left(\theta \mid y, \dots\right) = \frac{f\left(\theta \bigcap y \mid \dots\right)}{f\left(\bcancel{\theta} \bigcap y \mid \dots\right)} =
+\frac{f\left(\theta \mid \dots\right)f\left(y \mid \theta\right)}{\int_{-\infty}^\infty f\left(\theta \mid \dots \right)f\left(y \mid \theta\right) d\theta}
+$$
+
+-   For $\theta$ defined on a *continuous* parameter space, $\Theta$, the prior $f\left(\theta \mid \dots\right)$ and posterior $f\left(\theta \mid y, \dots\right)$ PDFs are different but both (should) integrate to $1$ over $\Theta$
+
+-   The definite integral that defines the marginal(ized) PDF or PMF of $y$ under the model but irrespective of $\theta$ usually can't be calculated exactly with a finite number of elementary operations (particularly when there are $\geq 2$ parameters)
+
+## BioNTech / Pfizer VE$\left(\theta\right) = \frac{1 - 2 \theta}{1 - \theta}$
+
+```{r}
+#| echo: false
+#| message: false
+library(patchwork)
+library(dplyr)
+library(ggplot2)
+theta <- tibble(prior = rbeta(10^7, 0.700102, 1),
+                posterior = rbeta(10^7, 0.700102 + 8, 1 + 94 - 8))
+VE <- bind_rows(transmute(theta, state = "prior",
+                          value = (1 - 2 * prior) / (1 - prior)),
+                transmute(theta, state = "posterior",
+                          value = (1 - 2 * posterior) / (1 - posterior)))
+g_theta <- ggplot() +
+  xlim(0, 1) +
+  geom_function(fun = dbeta, args = list(shape1 = 0.700102, shape2 = 1),
+                color = "#00BFC4") +
+  geom_function(fun = dbeta, color = "#F8766D",
+                args = list(shape1 = 0.700102 + 8, shape2 = 1 + 94 - 8)) +
+  scale_y_continuous(trans = "log10", limits = c(1.5e-2, 50)) +
+  labs(x = "theta",
+       y = "log-density")
+
+g_VE <- ggplot(VE) +
+  geom_density(aes(value, color = state)) + 
+  xlim(-5, 1) +
+  scale_y_continuous(trans = "log10", limits = c(1.5e-2, 50)) +
+  labs(x = "Vaccine Effectiveness (VE)",
+       y = "log-density")
+
+g_theta + g_VE
+```
+
+## 3 or 4 Tasks of Bayesian Inference
+
+-   [Bayes Rules]{.underline} enumerates three tasks for Bayesian inference, which are elaborated on by Lancaster:
+
+    1.  Estimation of Parameters
+
+    2.  Evaluating Hypotheses
+
+    3.  Prediction
+
+-   Anti-Bayesian methods also involve these three tasks, but Bayesians do them in different and better ways
+
+-   Lancaster adds a fourth, namely Making Decisions, which we discussed on HW1 in the context of poker
+
+## (1) Estimation of Parameters
+
+1.  Analytically integrate to get the denominator of Bayes' Rule
+
+    -   Only possible in a few [simple models](https://en.wikipedia.org/wiki/Conjugate_prior#Table_of_conjugate_distributions), e.g., beta-binomial
+
+2.  Numerically integrate to get the denominator of Bayes' Rule
+
+    -   Only feasible when there are very few parameters
+
+3.  Draw from the joint distribution and keep realizations of the parameters iff the outcome realization matches the data
+
+    -   Only possible with discrete outcomes and small $N$
+
+4.  Perform MCMC to draw from the posterior distribution
+
+    -   Works for any posterior PDF that is differentiable w.r.t. $\theta$
+
+## Example of Denominator Calculation
+
+-   If the prior on $\theta$ is Beta with shape parameters $a$, and $b$ and the likelihood is binomial with successes $y$, size $n$, and success probability $\theta$, then the marginal(ized) probability is $\Pr\left(y \mid a, b, n\right) = f\left(\bcancel{\theta} \bigcap y \mid, a, b, n\right) = {n \choose y}\frac{B\left(a + y, b + n - y\right)}{B\left(a,b\right)}$
+
+. . .
+
+```{r}
+a <- 0.700102; b <- 1; n <- 94; y <- 8
+a_star <- a + y; b_star <- b + n - y
+choose(n, y) * beta(a_star, b_star) / beta(a, b) # analytical
+joint <- function(theta) dbeta(theta, a, b) * dbinom(y, n, theta)
+integrate(joint, lower = 0, upper = 1) # numerical
+R <- 10^7
+mean(rbinom(R, n, prob = rbeta(R, a, b)) == y) # simulation
+```
+
+## Example of Parameter Estimation
+
+-   Since $\Pr\left(y \mid a, b, n\right)$ is known in the beta-binomial case, we know that $\theta \mid a, b, y, n$ is distributed Beta with shape parameters $a^\ast = a + y$ and $b^\ast = b + n - y$
+
+-   The posterior expectation of $\theta$ is $\mathbb{E}\left[\theta \mid a,b,y,n\right] = \frac{a^\ast}{a^\ast + b^\ast} = \frac{a + y}{a + b + n}$, which is between the prior expectation, $\frac{a}{a + b}$ and the average of the data, $\frac{y}{n}$, but approaches the latter as $n \uparrow \infty$ for any fixed $a$ and $b$
+
+-   Since $a^\ast = a + y$ and $b^\ast = b + n - y$, it should be clear that it does not matter if you update your prior $n$ times with one data point each or update your prior once with all $n$ data points because you ultimately end up in the same place
+
+## (2) Evaluating Hypotheses
+
+-   Does *not* entail testing a point null hypothesis
+
+-   Testing means evaluating $\Pr\left(\mbox{hypothesis} \mid \mbox{evidence}\right)$
+
+-   FDA example: What are the prior and posterior probability that $\mbox{VE}\left(\theta\right) = \frac{1 - 2\theta}{1 - \theta} > 0.3$?
+
+. . .
+
+```{r}
+#| message: false
+library(dplyr)
+tibble(prior_theta = rbeta(R, a, b),
+       posterior_theta = rbeta(R, a_star, b_star),
+       prior_VE = (1 - 2 * prior_theta) / (1 - prior_theta),
+       posterior_VE = (1 - 2 * posterior_theta) / 
+         (1 - posterior_theta)) |> 
+  summarize(prior_prob = mean(prior_VE > 0.3),
+            posterior_prob = mean(posterior_VE > 0.3))
+```
+
+## Testing Point Null Hypotheses
+
+-   Frequentists cannot --- because $\theta$ and $\mbox{VE}\left(\theta\right)$ are not considered random variables --- ask questions like "What is $\Pr\left(\mbox{VE}\left(\theta\right) > 0.3 \mid n, y\right)$?" So, instead they ask questions like "What is $\Pr\left(\widehat{\theta} \leq \frac{8}{n} \mid \mbox{VE}\left(\theta\right) = 0.3\right)$?" because $\widehat{\theta} = \frac{y}{n}$ is a random variable that takes different values each time $n$ people in a trial get covid, which can be simulated as:
+
+```{r}
+# If theta = (1 - VE) / (2 - VE), what is the implication of VE = 0.3?
+tibble(y = rbinom(R, size = n, prob = (1 - 0.3) / (2 - 0.3)),
+       theta_hat = y / n) |> # maximum likelihood estimator of theta
+  summarize(p_value = mean(theta_hat <= 8 / n))
+```
+
+## Confidence Intervals
+
+-   Some people say that using $p$-values to test a null hypothesis is bad but confidence intervals are good, despite the fact that a confidence interval is a range of values such that if the null hypothesis value, $\theta_0$, were anywhere in that interval, you would fail to reject the null hypothesis
+
+-   A confidence interval is a line segment but people insist on ascribing a (Bayesian) topology to it such that values in the middle are more probable than values near the endpoints
+
+-   The FDA's rule that the 95% confidence interval for $\mbox{VE}\left(\theta\right)$ must exclude $0.3$ merely implies that 2.5% of vaccines whose effectiveness is $0.3$ will get approved
+
+## Neyman on Confidence Intervals
+
+Jerzy Neyman, who invented the confidence interval, [said](https://en.wikipedia.org/wiki/Confidence_interval#Common_misunderstandings)
+
+> I have repeatedly stated that the frequency of correct results will tend to $\alpha$ \[1 minus the type I error rate\]. Consider now the case when a sample is already drawn, and the calculations have given \[particular limits\]. Can we say that in this particular case the probability of the true value \[falling between these limits\] is equal to $\alpha$? The answer is obviously in the negative. The parameter is an unknown constant, and no probability statement concerning its value may be made \dots"
+
+## (3) Prediction
+
+-   Prediction is just the outcome margin of the joint distribution between the parameter(s) and outcome(s)
+
+-   You can use either prior or posterior parameter draws
+
+. . .
+
+```{r}
+tibble(prior_theta = rbeta(R, a, b),
+       posterior_theta = rbeta(R, a_star, b_star),
+       prior_pred = rbinom(R, size = n, prob = prior_theta),
+       posterior_pred = rbinom(R, size = n, prob = posterior_theta)) |> 
+  summarize(prob = mean(posterior_pred < prior_pred))
+```
+
+-   Others use "prediction" to mean "point prediction from $\widehat{\theta}$", rather than from the distribution induced by $\theta \mid a, b, n, y$
+
+## And That's What It's All About
+
+-   What is the distribution of a *future* $y_{N + 1}$ given *past* realizations, $y_1, \dots, y_N$? Do the Bayesian hokey pokey, $f\left(y_{N + 1} \mid y_1, \dots, y_N\right) = f\left(y_{N + 1} \bigcap \bcancel{\theta} \mid y_1, \dots, y_N\right) =$ $\int_\Theta f\left(y_{N + 1} \mid \theta\right) f\left(\theta \mid y_1, \dots, y_N\right) d\theta$
+
+-   In the case of the BioNTech / Pfizer vaccine, this results in
+
+```{r}
+choose(1, 1) * beta(a_star + 1, b_star + 1 - 1) / beta(a_star, b_star)
+```
+
+. . .
+
+-   Supervised learners eschew probabilistic thinking by reasoning $\widehat{\theta} = \frac{y}{n}$ and $\Pr\left(y_{N + 1} \mid \widehat{\theta}\right) = \widehat{\theta} < \frac{1}{2}$ so $y_{N + 1}$ is *classified* as $0$ deterministically but might be a false negative
+
+## Gamma Distribution
+
+-   If $\Omega = \mathbb{R}_+$ and $a, b > 0$, the PDF of a Gamma R.V., $X$, is $$f\left(x \mid a,b\right) = \frac{b^a}{\Gamma\left(a\right)}x^{a - 1}e^{-bx},$$ where $\Gamma\left(a\right) = \int_0^\infty t^{a - 1} e^{-t}dt = \frac{1}{a} \prod\limits_{n = 1}^\infty \frac{1}{1 + \frac{a}{n}} \left(1 + \frac{1}{n}\right)^a$ simplifies to $\left(a - 1\right)!$ iff $a$ is a positive integer
+-   If $a = 1$, the Gamma PDF simplifies to that of an exponential with rate $b$ (i.e. with expectation $1 / b$)
+-   $\mu = \frac{a}{b}$ and $\sigma^2 = \frac{a}{b^2}$ so you can let $a = \frac{\mu^2}{\sigma^2}$ and $b = \frac{\mu}{\sigma^2}$
+
+## Negative Binomial Distribution
+
+-   Suppose $X$ is distributed Poisson with expectation $\mu$ and that $\mu$ has a Gamma prior with shape $a > 0$ and rate $b > 0$
+
+-   The marginal(ized) distribution of $X$ is confusingly called negative binomial and has the (prior predictive) PMF $$\Pr\left(x \mid a,b\right) = f\left(\bcancel{\mu} \bigcap x \mid a,b\right) = \\ \int_0^\infty \frac{b^a}{\Gamma\left(a\right)}\mu^{a - 1}e^{-b\mu} \times \frac{1}{x!} \mu^x e^{-\mu} d\mu = \\
+    \frac{b^a}{\Gamma\left(a\right)} \frac{1}{x!} \int_0^\infty \mu^{a + x - 1}e^{-\left(b + 1\right)\mu} d\mu = \frac{b^a}{\Gamma\left(a\right)} \frac{1}{x!} \frac{\Gamma\left(a + x\right)}{\left(b + 1\right)^{a + x}}$$
+
+## Posterior Distribution of $\mu$ {.smaller}
+
+-   Suppose you observe realized counts $x_1, \dots, x_N$ that are presumed conditionally independent with expectation $\mu$. Under the Gamma prior for $\mu$, the posterior PDF is $$f\left(\mu \mid a,b, x_1, \dots x_N\right) = \frac{f\left(\mu \mid a,b\right)\prod_{n = 1}^N\Pr\left(x_n \mid \mu\right)}{\prod_{n = 1}^N\Pr\left(x_n \mid a,b\right)}$$
+
+-   Note: $\prod\limits_{n = 1}^N \Pr\left(x_n \mid \mu\right) = \prod\limits_{n = 1}^N \frac{\mu^{x_n} e^{-\mu}}{x_n!} = e^{-N\mu} \mu^{\sum\limits_{n = 1}^N x_n}\prod\limits_{n = 1}^N \frac{1}{x_n!}$. Let $s = \sum\limits_{n = 1}^N x_n$ be distributed Poisson with expectation $N\mu$. Then, $$f\left(\mu \mid a,b,s\right) \propto \mu^{a - 1} e^{-b \mu} \mu^s e^{-N\mu} = \mu^{a^\ast - 1} e^{-b^\ast \mu},$$
+
+    which is proportional to a Gamma PDF with shape $a^\ast = a + s$ and rate $b^\ast = b + N$.
+
+-   Posterior predictive distribution is negative binomial with $a^\ast$ and $b^\ast$ rather than $a$ and $b$
+
+## Modern Simulation
+
+```{r}
+N <- 5
+a <- 1.6
+b <- 0.8
+R <- 1e6
+joint <- function(mu, s = 20) dgamma(mu, a, b) * dpois(s, N * mu)
+tibble(mu = rgamma(R, a, b)) |>
+  rowwise() |> 
+  mutate(S = sum(rpois(N, mu))) |> 
+  ungroup() |> 
+  filter(S == 20) |> # suppose you observed an s of 20
+  summarize(average = mean(mu), 
+            expectation = (a + first(S)) / (b + N),
+            marginal = n() / R,
+            numerical = integrate(joint, lower = 0, upper = Inf)$value,
+            prediction_1 = rnbinom(1, a + first(S), (b + N) / (b + N + 1)))
+```
+
+## Principles to Choose Priors With
+
+1.  Do not use improper priors (those that do not integrate to $1$)
+2.  Subjective, including "weakly informative" priors
+3.  Entropy Maximization
+4.  Invariance to reparameterization (particularly scaling)
+5.  "Objective" (actually also subjective, but different from 2)
+
+-   Choose a prior family that integrates to $1$ over $\Theta$. Then, choose hyperparameters that are consistent w/ your beliefs.
+-   The important part of a prior is what values it discounts. Draw from the prior predictive distribution to check.
+
+## *Ex Ante* P{D,M}F of *Ex Post* Data {.smaller}
+
+A likelihood function is the same expression as a P{D,M}F with 3 distinctions:
+
+1.  For the PDF or PMF, $f\left(\left.x\right|\boldsymbol{\theta}\right)$, we think of $X$ as a random variable and $\boldsymbol{\theta}$ as given, whereas we conceive of the likelihood function, $\mathcal{L}\left(\boldsymbol{\theta};x\right)$, to be a function of $\boldsymbol{\theta}$ (in the mathematical sense) evaluated only at the *observed* data, $x$
+    -   As a consequence, $\int\limits _{-\infty}^{\infty}f\left(\left.x\right|\boldsymbol{\theta}\right)dx=1$ or $\sum\limits _{x \in\Omega}f\left(\left.x\right|\boldsymbol{\theta}\right)=1$ while $\int_{-\infty}^{\infty}\int_{-\infty}^{\infty}\cdots\int_{-\infty}^{\infty} \mathcal{L}\left(\boldsymbol{\theta};x\right)d\theta_{1}d\theta_{2}\ldots d\theta_{K}$ may not exist and is never 1
+2.  We often think of "the likelihood function" for $N$ conditionally independent observations, so $\mathcal{L}\left(\boldsymbol{\theta};\mathbf{x}\right)=\prod _{n=1}^{N}\mathcal{L}\left(\boldsymbol{\theta};x_n\right)$
+3.  By "the likelihood function", we often really mean the natural logarithm thereof, a.k.a. the log-likelihood function $\ell\left(\boldsymbol{\theta};\mathbf{x}\right) = \ln\mathcal{L}\left(\boldsymbol{\theta},\mathbf{x}\right)=\sum_{n=1}^{N} \ln\mathcal{L}\left(\boldsymbol{\theta};x_n\right)$
+
+-   Bayesians (can) use the same log-likelihood functions as Frequentists
+
+## Normal Illustration
+
+$$
+\frac{1}{\sigma \sqrt{2 \pi}} e^{-\frac{1}{2} \left(\frac{x - \mu}{\sigma}\right)^2}
+$$
+
+-   For a given $\mu$ and $\sigma > 0$, the above PDF (of $x$) integrates to $1$ over $\Omega = \mathbb{R}$
+
+```{r}
+integrate(dnorm, lower = -Inf, upper = Inf, mean = 1, sd = 2)
+```
+
+-   For a given $x$ and $\mu$, the integral over $\Theta =\mathbb{R}_+$ of the above likelihood function (of $\sigma$) diverges
+
+```{r}
+integrate(dnorm, lower = 0, upper = Inf, x = 5 / 4, mean = 1, 
+          subdivisions = 10^4, stop.on.error = FALSE)
+```
+
+## Maximum Likelihood Estimation
+
+-   Frequentists do not allow a prior on $\theta$, which is not a R.V.
+
+-   If there is no $f\left(\theta\right)$, there is no $f\left(\theta \bigcap y\right) = f\left(\theta\right) f\left(y \mid \theta\right)$, $f\left(\bcancel{\theta} \bigcap y\right) = \int_\Theta f\left(\theta \bigcap y\right) d\theta$, or $f\left(\theta \mid y\right) = \frac{f\left(\theta \bigcap y\right)}{f\left(\bcancel{\theta} \bigcap y\right)}$
+
+-   Frequentists do allow conditioning on $\theta$ or considering how the probability (density) of $y$ changes as a function of $\theta$
+
+-   Since $\ln$ is a monotonic transformation, the $\widehat{\theta}$ that maximizes $L\left(\widehat{\theta}; y\right)$ also maximizes $\ln L\left(\widehat{\theta};y\right)$, which is more amenable to numerical maximization
+
+## Properties of the MLE
+
+Under some important assumptions that we are ignoring,
+
+1.  A transformation of a MLE is a MLE
+
+2.  A MLE is asymptotically normally distributed across all possible datasets of size $N$ that could be drawn from a population with parameter $\theta$
+
+    -   The center of this normal distribution is $\theta$
+
+    -   The standard deviation (error) of this normal distribution can be complicated but is usually proportional to $\frac{1}{\sqrt{N}}$
+
+3.  Although the MLE usually has some bias for finite $N$, no zero-bias estimator has a smaller asymptotic variance
+
+## Goals of Frequentists vs. Bayesians {.smaller}
+
+-   Frequentists are interested in $$\mathbb{E}\left[h\right] = \int_{-\infty}^\infty \cdots \int_{-\infty}^\infty h\left(x_1, \dots, x_N\right) f\left(x_1, \dots x_n \mid \theta\right)dx_1\dots dx_N,$$ where $h\left(\right)$ is a function of the sample, such as an estimator of $\theta$ or a function thereof
+
+-   Bayesians are interested in $$\mathbb{E}\left[g\right] = \int_{-\infty}^\infty \cdots \int_{-\infty}^\infty g\left(\theta_1, \dots \theta_K\right) f\left(\theta_1, \dots, \theta_K \mid x_1, \dots x_N\right) d\theta_1\dots d\theta_K,$$ where $g\left(\right)$ is a function of your posterior beliefs about the parameters, such as utility
+
+-   To a mathematician, $\mathbb{E}\left[h\right]$ and $\mathbb{E}\left[g\right]$ seem to be opposites
+
+-   To people who do not know math, $\mathbb{E}\left[h\right]$ and $\mathbb{E}\left[g\right]$ seem to be the same thing
+
+-   To scientists who know math, the Bayesian formulation is appealing because we are never given parameters $\left(\theta\right)$ but may be given data $\left(x_1, \dots x_N\right)$ that is not a sample
