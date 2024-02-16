@@ -1,0 +1,208 @@
+---
+title: "GR5065 Homework 1 Answer Key"
+format: 
+  pdf:
+    number-sections: true
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        \usepackage{tabstackengine}
+        \usepackage{xcolor}
+        \usepackage{rotating}
+        \usepackage{cancel}
+pdf-engine: xelatex
+editor: visual
+execute: 
+  echo: true
+keep-tex: true
+---
+
+```{=tex}
+\newcommand\blackcard[2]{%
+  \begingroup\fboxsep=0pt\relax
+  \fbox{\tabbedCenterstack{%
+  \scriptsize$#2$ && \\&\makebox[10pt]{#1}&\\&
+  &\rotatebox[origin=c]{180}{\scriptsize$#2$}}}%
+  \endgroup}
+\newcommand\redcard[2]{%
+  \begingroup\fboxsep=0pt\relax
+  \fbox{\color{red}\tabbedCenterstack{%
+  \scriptsize$#2$ && \\&\makebox[10pt]{#1}&\\&&\rotatebox[origin=c]{180}{\scriptsize$#2$}}}%
+  \endgroup}
+```
+# Poker
+
+The rules of No Limit Texas Hold 'Em are explained in more (and excessive) detail at
+
+<https://en.wikipedia.org/wiki/Texas_hold_%27em>
+
+The instance we are considering in this problem was filmed at
+
+<https://youtu.be/2UhdlMvQSvg>
+
+## Seat Positions
+
+Although the clockwise rotation of seat positions between hands is deterministic rather than random, you can think of it as having a $\frac{1}{n}$ probability of being the small blind and a $\frac{1}{n}$ chance of being the big blind, where $n$ is the number of players at the table. The expected value of playing from the small blind or big blind positions is quite negative, but the expected value of playing from most of the other positions is slightly positive. By summing the expected value of all $n$ seat positions, each with a weight of $\frac{1}{n}$, the expected value irrespective of seat position is zero. More generally, summing a discrete random variable while weighting by the probability it occurs (which does not have to be a constant) is the essence of marginalization.
+
+## Pair Probability
+
+-   Irrespective of any betting, what is the probability of being dealt two hole cards that have the same value (i.e. a pair)? Show your work.
+
+Since there are $13$ different card values, the probability of being dealt a pair of any of them can be obtained by using the General Multiplication Rule along with the General Addition Rule:$$\frac{4}{52} \times \frac{3}{51} \times 13 = \frac{1}{13} \times \frac{1}{17} \times 13 = \frac{1}{17} \approx 0.059$$
+
+Here $\frac{4}{52} = \frac{1}{13}$ is the probability of being dealt a card of a certain value and $\frac{3}{51} = \frac{1}{17}$ is the conditional probability of being dealt another card of the same value where there are only three cards of that value left in a deck with $51$ total cards in it (because one card has already been dealt to you). We could sum that product $13$ times, which is equivalent to just multiplying by $13$.
+
+You could also equivalently reason that there are ${4 \choose 2} = 6$ ways to be dealt two out of four cards that have the same value out of ${52 \choose 2} = 1326$ possible ways to be dealt two hole cards. And $\frac{6}{1326} \times 13 = \frac{1}{17}$.
+
+-   From Wesley's perspective, roughly what is the probability that Hank was a pair, given that Hank raised? You should refer to Bayes' Rule, but exact calculations are not essential for this question.
+
+If we let $\Pr\left(\text{pair}\right) = \frac{1}{17}$ be a "prior" probability of being dealt a pair and assume that $\Pr\left(\text{bet} \mid \text{pair}\right) = 1$, then Bayes' Rule reads as $\Pr\left(\text{pair} \mid \text{bet}\right) = \frac{\Pr\left(\text{pair}\right) \Pr\left(\text{bet}\mid \text{pair}\right)}{\Pr\left(\text{bet}\right)},$ where the margin(alized) probability of betting $\Pr\left(\text{bet}\right) = \Pr\left(\text{\cancel{pair}} \bigcap \text{bet}\right)$ is assumed to be $\frac{1}{3}$ . Thus, a good answer to this question is $\Pr\left(\text{pair} \mid \text{bet}\right) = \frac{1/17 \times 1}{1 / 3} = \frac{3}{17} \approx 0.176$.
+
+However, an even better answer to this question would condition on the fact that Wesley has \redcard{A}{\diamondsuit} \redcard{K}{\heartsuit}, which means that Hank can have neither of those cards and the deck that Hank was dealt two cards from effectively only had $50$ cards in it. Thus, the probability of being dealt a pair from a deck that is lacking an Ace and a King is $\frac{6}{{50 \choose 2}} \times 12 + \frac{3}{{50 \choose 2}} \times 2 = \frac{12}{175} \approx 0.069$ because there are ${3 \choose 2} = 3$ ways to either be dealt a pair of Aces or a pair of Kings when there are only three of each left in the deck of $50$ cards. Moreover, many of the non-pair hands that Hank would raise with include an Ace or a King, which are less likely given that Wesley has one of each. Thus, from Wesley's perspective, the probability that Hank has a pair given that Hank raises is a bit higher than $\frac{3}{17}$.
+
+-   Explain how the probability of being dealt a pair is Frequentist but the probability of Wesley thinking that Hank has a pair, given that Hank raised, is Bayesian.
+
+The probability of being dealt something --- irrespective of any betting --- can be calculated "objectively" (under the plausible assumption that each card left in a shuffled deck with $n$ cards has a $\frac{1}{n}$ chance of being dealt next) using combinatorics. The key is that shuffling the deck induces a random variable for what card is dealt next from a deck with $n$ cards. As the number of deals approaches $\infty$, the proportion of times where someone is dealt a pair approaches $\frac{1}{17}$, which is the Frequentist definition of probability.
+
+In contrast, the act of betting is a choice made by a person that only partly depends on the *realized* hole cards, which is no longer a random variable from a Frequentist perspective. Asking whether Hank *currently* has a pair is fundamentally the same as asking whether a huge odd integer is prime, whether a treatment effect is positive, or whether the true parameter falls within a particular confidence interval, in the sense that it either is or it is not but we do not know which. In fact, Hank does not have a pair, but the other players at the table do not know that and have to subjectively evaluate the probability that Hank has a pair, given Hank's betting, body language, etc.
+
+This is especially clear later in the video where Tom says "It feels like \[Wesley\] flopped $\dots$ trips." Ronald Fisher, in particular, wanted to avoid having science be reduced to what scientists *feel* about a hypothesis. Thus, if Fisher had said about poker strategy the same as what he advocated with regard to science, then Fisher would say to ignore the betting, body language, etc. and only utilize "objective" information, i.e. the conditional probability that an opponent could have been dealt something, given the cards that are visible to the player. That would be a terrible poker strategy and you would quickly lose all of your chips if your opponents knew you were playing that way (by going all-in when they have the best possible hand). But if that is a terrible way to play poker, is it also a terrible way to conduct science?
+
+## Wesley's First Bet
+
+-   At around 1:00 into the video, the screen asserts that Wesley has a 68% chance to win at showdown and Hank has a 32% chance to win at showdown. The players cannot see that, but explain why the screen's calculation is both misleading to the audience and conceptually wrong.
+
+Since $0.68 + 0.32 = 1$, the screen must be calculating the probability that Wesley and Hank win *against each other* at showdown. However, Tom is still making his first decision and could also win the pot. It seems as if the screen is programmed to calculate the probability of winning at showdown given the cards that are visible to the audience, and when the RFID reader fails to read Tom's hole cards (which only rarely happens), it makes the calculations conditional on Tom not existing. If the screen were programmed correctly, it would marginalize over all the hole cards that Tom could have and produce three probabilities that add to $1$, in which case the probability that Wesley and Hank win at showdown would be less than $0.68$ and $0.32$ respectively.
+
+-   Wesley does raise to \$30,000, which takes the pot from \$13,500 to \$43,500. What probability of Wesley winning the pot is the "breakeven value", which is to say what probability of Wesley winning implies that the expected dollar value of Wesley's \$30,000 bet is zero (i.e. neither positive nor negative)?
+
+To calculate a breakeven value, we take the amount Wesley would *gain* if he wins (the current pot of \$13,500) and multiply it by $p$, the probability of winning. Then, we add the amount Wesley would *lose* by betting, multiplied by $1 - p$. Finally, we set that sum equal to zero and solve for $p$ like$$13500 p + \left(-30000\right) \left(1 - p\right) = 0 \implies p = \frac{30000}{13500 + 30000} = \frac{20}{29} \approx 0.69.$$Since Wesley's \redcard{A}{\diamondsuit} \redcard{K}{\heartsuit} is among the very best combinations of hole cards that he could have been dealt and Wesley has a sequencing advantage over Hank (and anyone else who does not fold) in all subsequent rounds of betting, it is entirely reasonably for Wesley to think that his probability of winning the hand is at least that big and thus Wesley raises.
+
+-   How does this concept of a breakeven value relate to the plot that we looked at in Week01 regarding the PredictIt market's probability of Joe Biden winning his reelection?
+
+The plot we made in Week01 that showed the PredictIt market's price for a futures contract where you win \$1 if your choice wins the election. Thus, the market price is the breakeven value and you would only purchase a futures contract for Biden if you believed the probability of Biden winning the election was greater than the breakeven value.
+
+## Wesley's Second Bet
+
+-   The commentator remarks at about 2:05 in the video that "Tom Dwan $\dots$ has been playing a pretty low-variance style." What does this mean and why do you think the commentator feels it is worth mentioning at this point?
+
+The more that you bet, the greater the variance in the amount of money you win or lose. Playing a low-variance style would *generally* entail calling rather than raising in situations where your hole cards are too good to fold and folding when the probability of winning is close to the breakeven value, even if it is slightly greater than the breakeven value. Since Tom makes a four-bet raise, that is an aberration from a low-variance style that would suggest Tom's hole cards are really good.
+
+-   Irrespective of any betting, what is the probability of being dealt a nine and an eight of the same suit or dealt an eight and a seven of the same suit?
+
+The probability of being dealt a eight and either a nine or a seven of the same suit can be calculated using the General Multiplication Rule$$\frac{4}{52} \times \frac{2}{51} \times 2 = \frac{8}{{52 \choose 2}} = \frac{4}{663} \approx 0.006,$$ where the factor of two is due to the fact that the eight can either be dealt before or after the adjacent card of the same suit.
+
+-   Under the above assumptions --- but ignoring the fact that Doug saw Wesley's hole cards --- what is the main obstacle to computing the probability that Wesley has an eight and an adjacent card of the same suit, given that he three-bets and five-bets?
+
+If the prior probability of being dealt an eight and an adjacent card of the same suit is $\frac{4}{663}$ and the conditional probability of Wesley three-betting and then five-betting given that he has an eight and an adjacent card of the same suit is $\frac{1}{2}$, then the numerator of Bayes' Rule is $\frac{2}{663}$. However, the denominator of Bayes' Rule --- the marginal(ized) probability of Wesley three-betting and five-betting, irrespective of his hole cards --- is less obvious. Surely, Wesley would five-bet with a pair of Aces or a pair of Kings or apparently an Ace with a King but what else? Would Wesley five-bet with a pair of Queens or Jacks? Would he sometimes five-bet with two adjacent cards of the same suit if they were both lower than an eight? We could reasonably guess that the marginal(ized) probability of Wesley three-betting and then five-betting is a very small number, but how small makes a big difference to Bayes' Rule.
+
+More generally, figuring out the denominator of Bayes Rule is the difficult part in ancient Bayesian inference. Also, if the unknowns are continuous, it is usually impossible to express the denominator with a finite number of elementary mathematical operations.
+
+## Post-Flop Action
+
+-   At about 5:45 into the video, the commentator says "Whatever Dwan called with pre-flop I can't imagine him folding on a 8-8-3 board to a \$125,000 bet." How does the concept of a "breakeven value" mentioned earlier help substantiate what the commentator is saying about the near certainty that Tom calls (which he does bringing the pot to \$812,000)?
+
+If we do a calculation for Tom's breakeven value, $q$, for a call it is\
+,$$562000q + \left(-125000\right) \left(1 - q\right) \implies q = \frac{125000}{562000 + 125000} = \frac{125}{687} \approx 0.182$$
+
+The commentator is simply saying that if Tom's hole cards were good enough for him to both four-bet and call Wesley's five-bet before the flop, then surely they are good enough to give Tom more than a $q = \frac{125}{687}$ chance of winning after a flop of 8-8-3, even though there is a small chance that Wesley now has three-of-a-kind with eights or is one diamond away from a flush.
+
+-   Do you think that if Wesley had *not* exposed his hole cards to Doug --- but all the previous betting were the same as in the video --- that Tom would have folded when Wesley goes all-in on the river? Explain your reasoning with reference to conditional probability.
+
+When Wesley accidentally exposes his hole cards to Doug, their interaction gives Tom additional information to condition on that would not ordinarily be available. In the video, Doug looks really uncomfortable with this knowledge, knowing that it could affect decisions involving millions of dollars. Would Doug have mentioned seeing Wesley's hole cards or would Doug have made as big a deal about it if Wesley had a pair of Aces or a pair of Kings, which might be the only two hands that Wesley would have a positive expected value against Doug even if Doug knows what Wesley has and Wesley does not know what Doug has? Is Doug implicitly telling Wesley "Your expected value is negative against me, so you should fold (or perhaps call) rather than three-betting!" Tom explicitly mentions this interpretation when he says about 10:18 into the video, "Doug saw \[Wesley's\] hand $\dots$ tried to talk \[Wesley\] out of three-betting $\dots$ three-bet anyway." Thus, from Tom's perspective, the probability that Wesley has a pair of Aces or Kings given Wesley's aggressive betting is lower than it would be had Doug not seen Wesley's hole cards.
+
+One thing that Tom does not explicitly mention --- although we may well have noticed it --- is that at about 20 seconds into the video, after Doug twice tells Wesley that he saw Wesley's hole cards, Wesley says to Doug "Fine, fine. You're going to fold, right?". That would be an odd thing to say if Wesley had an eight (i.e., an eight with an adjacent card of the same suit or perhaps an eight with an Ace of the same suit, any of which would be plausible candidates for three-betting if no one else knew your hole cards) because Doug could easily have hole cards that have a positive expected value against Wesley given that Doug knows what Wesley has. Thus, from Tom's perspective, the probability that Wesley has an eight given his aggressive betting is lower than it would be had Doug not seen Wesley's hole cards.
+
+In addition, after the flop comes \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit} \redcard{8}{\diamondsuit} Doug shuts down the side conversation about 4:45 into the video once Wesley is preparing to bet again and asks Tom how many chips he has. It is less clear what to make of this, other than Doug seems to sense that the pot is going to ultimately be huge and wants Wesley and Tom to be able to make their decisions without distractions. Perhaps Doug would have let the side conversation continue if Wesley had an easier decision to bet (i.e. with a high pair or three-of-a-kind), although once Wesley five-bets, the optimal poker strategy is to bet something on the flop regardless of what hole cards he has because the pot is already big and Tom might fold.
+
+All in all, if Tom had been playing a low-variance strategy, he probably would not call an all-in bet from Wesley with a pair of Queens if Doug had not seen Wesley's hole cards. At least that is what it seems from the video in question. In fact, another [video](https://youtu.be/Zx0AWBMnPqM?feature=shared&t=567) (that you did not need to watch) by Phil Galfond (who is another poker player) who texted with Tom afterward explained more of what Tom was thinking during this hand. Tom texted Phil:
+
+> Also, I probably four-bet you \[Phil\] or most people at the table with a pair of Queens, but my guess is that Wesley went in to the day firing, especially vs. me.
+>
+> I was planning not to give Wesley the chance to put me in tough spots easily. Probably wouldn't have four-bet Wesley pre-flop, except that I already down weighted a pair of Aces or Kings somewhat (and knew that there would be more reads and stuff from this weirdness where I thought I had an edge).
+
+In short, if Doug had not seen Wesley's hole cards, Tom probably would have called Wesley's three-bet rather than raising with a four-bet and the rest of the hand could have gone completely differently.
+
+## Alternative
+
+Suppose Tom merely called Wesley's initial three-bet of \$30,000, rather than raising to \$100,000.
+
+-   Explain why Hank would have surely called as well with his \redcard{A}{\heartsuit} \blackcard{8}{\clubsuit}, which would have ended the first round of betting without giving Wesley an opportunity to five-bet.
+
+If we calculate the breakeven value, $r$ , for Hank to bet an additional \$23,000 to call Wesley's three-bet once Tom has called to bring the pot to \$71,500:$$71500r + \left(-23000\right)\left(1 - r\right) = 0 \implies r = \frac{23000}{71500 + 23000} = \frac{46}{189} \approx 0.243.$$ Thus, if Hank thought his probability of winning was greater than $r$, then he should call. Since we assumed Hank would raise originally with probability $\frac{1}{3}$, the fact that Wesley raised and Tom called would make Hank think his probability of winning is little bit lower than $\frac{1}{3}$ but still at least $\frac{1}{4}$.
+
+-   Thus, three players would have been competing for a pot that had \$94,500 in it when the flop came as \redcard{8}{\diamondsuit} \redcard{3}{\diamondsuit} \blackcard{8}{\spadesuit}. The order of decisions in each round would be Tom, Hank, Wesley. Speculate as to how all the rest of the action would have proceeded, based on your understanding of conditional probability and decision theory.
+
+Lots of things are plausible speculation, such as
+
+1.  After the flop, Tom would check and Hank could either check or raise. If Hank raises, then presumably both Wesley and Tom would call. If Hank checks, then presumably Wesley would raise and both Wesley and Hank would call. Either way, whoever raises would probably use a fairly large size --- like $\frac{2}{3}$ of the \$94,500 pot --- so the pot might swell to \$283,500 if both call the raise.
+
+2.  After the turn, Tom would check and my guess would be that Hank would bet a lot, perhaps $\frac{3}{4}$ of \$283,500. Wesley should fold at this point, but Tom could easily call due to the distinct possibility that Hank has a pair that is lower than Tom's pair of Queens. That would bring the pot to about \$708,750
+
+3.  After the river, Tom would check and Hank would go all-in. Tom would again face a difficult decision. Tom probably would figure that Hank does not have a pair of Aces or a pair of Kings (or else Hank would have four-bet after Wesley's three-bet before the flop), and thus Tom might very well call with a pair of Queens. In that scenario, Tom would lose the biggest televised pot in history, rather than winning it.
+
+# Poisson-Gamma Conjugacy
+
+The Poisson Probability Mass Function (PMF) from Week03 is$$\Pr\left(x \mid \mu\right) = \frac{\mu^xe^{-\mu}}{x!},$$ where $X$ is a non-negative integer.
+
+## Joint Probability of $N$ Observations
+
+The joint probability of $N$ observations can be found using the special case of the General Multiplication Rule where the events are independent, so$$\Pr\left(X_1 = x_1 \bigcap X_2 = x_2 \bigcap \dots \bigcap X_N = x_n \mid \mu\right) = \prod_{n = 1}^N \frac{\mu^{x_n}e^{-\mu}}{x_n!} = \mu^{\sum_{n = 1}^N x_n} e^{-N\mu}\prod_{n = 1}^N\frac{1}{x_n!}$$ due to the fact that the product of terms with a common base is equal to that base raised to the sum of the exponents.
+
+## Sum of $N$ Poisson Random Variables
+
+```{r}
+N <- 5
+mu <- 1.234
+R <- 10^6
+```
+
+```{r}
+#| message: false
+#| fig-height: 3.25
+library(dplyr)
+library(ggplot2)
+set.seed(20240215)
+sims <- tibble(X_1 = rpois(R, mu),
+               X_2 = rpois(R, mu),
+               X_3 = rpois(R, mu),
+               X_4 = rpois(R, mu),
+               X_5 = rpois(R, mu),
+               S = X_1 + X_2 + X_3 + X_4 + X_5)
+ggplot(sims) + 
+  geom_bar(aes(x = S, y = ..prop..))
+```
+
+We get the same histogram by simulating one Poisson random variable with expectation $N \mu$
+
+```{r}
+#| fig-height: 3.25
+tibble(S = rpois(R, N * mu)) |> 
+  ggplot() + 
+  geom_bar(aes(x = S, y = ..prop..))
+```
+
+## Gamma Prior and Posterior Distribution
+
+One implication of the previous subproblem is that if we have $N$ (not necessarily $5$) independent observations on a count variable that are assumed to all be distributed Poisson with expectation $\mu$ (not necessarily $1.234$), then we can think of the sum as a single Poisson random variable whose Probability Mass Function (PMF) is$$\Pr\left(s \mid N, \mu\right) = \frac{\left(N\mu\right)^se^{-N\mu}}{s!}$$
+
+where $s = \sum_{i = 1}^N x_i$ .
+
+Suppose your prior distribution for $\mu$ has the following Probability Density Function (PDF)$$f\left(\mu \mid a, b\right) = \frac{b^a}{\Gamma\left(a\right)} \mu^{a - 1} e^{-b \mu},$$ where $a > 0$, $b > 0$, and $\Gamma\left(a\right) = \int_0^\infty t^{a - 1} e^{-t}dt = \frac{e^{-\gamma a}}{a} \prod\limits_{i = 1}^\infty \frac{e^{\frac{a}{i}}}{1 + \frac{a}{i}}$ is a special function known as the Gamma function that could be evaluated in R by calling `gamma(a)` although that is not necessary for this problem. This prior distribution is known as the Gamma family and you can draw from it in R by calling `rgamma(R, shape = a, rate = b)`.
+
+Moreover, section 5.2 of [Bayes Rules]{.underline} shows that a Gamma prior is naturally conjugate with the Poisson likelihood, which implies that the posterior distribution given $a$, $b$, $N$ and $s$ will also be in the Gamma family but with shape $a^\ast = a + s$ and rate $b^\ast = b + N$ .
+
+We can plot the simulated density and compare it to the posterior density calculated the ancient way with
+
+```{r}
+a <- 1.25
+b <- 1.75
+s <- 14
+tibble(mu = rgamma(R, shape = a, rate = b),
+       # vvv uses this ^^^ mu rather than 1.234
+       S = rpois(R, N * mu)) |>
+  filter(S == s) |> 
+  ggplot() +
+  geom_density(aes(x = mu)) + 
+  geom_function(fun = dgamma, args = list(shape = a + s, rate = b + N), color = "red")
+```
