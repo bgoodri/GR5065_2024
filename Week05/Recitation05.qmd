@@ -1,0 +1,245 @@
+---
+title: "Recitation for Week05"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+preload-iframes: false
+---
+
+## Introduction
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   We are going to manipulate the Pareto Distribution, which is often used to model skewed, positive RVs, such as income
+
+-   But think about the dollar price of Bitcoin in $50$ years
+
+-   Suppose that it is uniformly distributed between $0$ and $\theta$, where $\theta$ is unknown but you have Pareto beliefs about $\theta$
+
+-   Focus on the Bayesian mathematical manipulations to estimate $\theta$, evaluate hypotheses, and predict the future
+
+-   Pull and change your working directory to Week05
+
+-   Create a blank .qmd file in Week05 to enter your code
+
+-   `source("pareto.R")` to define `rpareto()`
+
+## Cumulative Density Function (CDF)
+
+-   Let $\Theta = \left[k,\infty\right)$ and $k,w > 0$. The CDF of the Pareto distribution is $$
+    F\left(\theta \mid k,w\right) = 1 - \left(\frac{k}{\theta}\right)^w
+    $$ if $\theta \geq k$ or else $F\left(\theta \mid k,w\right) = 0$.
+
+-   How can we define `ppareto` in a R chunk?
+
+. . .
+
+```{r}
+ppareto <- function(x, k, w) ifelse(x >= k, 1 - (k / x)^w, 0)
+```
+
+```{r}
+k <- 69000
+w <- 1.6 # you could choose other positive values
+```
+
+## Probability Density Function (PDF)
+
+-   If the CDF is $F\left(\theta \mid k,w\right) = 1 - \left(\frac{k}{\theta}\right)^w$ , what is the PDF?
+
+. . .
+
+$$
+\frac{\partial F\left(\theta \mid k,w\right)}{\partial \theta} = -w\left(\frac{k}{\theta}\right)^{w - 1} \times \frac{-k}{\theta^2} = \frac{wk^w}{\theta^{w + 1}} = f\left(\theta \mid k,w\right)
+$$
+
+-   If you cannot work that out for yourself, you could type `differentiate 1 - (k / t)^w wrt t` at <https://www.wolframalpha.com/> (which also does integrals)
+
+-   How would we implement the PDF in a R chunk?
+
+. . .
+
+```{r}
+dpareto <- function(x, k, w) ifelse(x >= k, w * k^w / x^(w + 1), 0)
+```
+
+## Graph of Pareto PDF
+
+```{r}
+#| echo: false
+library(ggplot2)
+ggplot() +
+  xlim(0, 500000) +
+  geom_function(fun = dpareto, args = list(k = k, w = w)) +
+  labs(x = "theta",
+       y = "density")
+source("pareto.R")
+```
+
+## Validation
+
+-   How could we check that `dpareto` is correct?
+
+. . .
+
+```{r}
+integrate(dpareto, lower = k, upper = Inf, k = k, w = w)
+```
+
+. . .
+
+-   If `dpareto` & `rpareto` are correct, what is going on here?
+
+```{r}
+replicate(96, mean(rpareto(10^7, k, w)))
+```
+
+## Expectation
+
+-   What is an expression for $\mathbb{E}\left[\theta \mid k,w\right]$?
+
+. . .
+
+$$\mathbb{E}\left[\theta\right] = \int_{k}^\infty \theta f\left(\theta \mid k, w\right) d\theta =
+  \int_{k}^\infty \theta \frac{w k^w}{\theta^{w + 1}} d\theta = \\
+  \int_{k}^\infty w \left(\frac{k}{\theta}\right)^{w} d\theta = 
+  w k^{w} \int_{k}^\infty \theta^{-w} d\theta = 
+  \left.\frac{w k^{w}}{1 - w} \theta^{1 -w}\right|_{k}^\infty$$If $w \leq 1$, then this definite integral is *infinite*. If $w > 1$, then the expectation of $\theta$ is finite, namely $\mu = \frac{w k^{w}}{w - 1} k^{1 -w} = \frac{w k}{w - 1}$.
+
+-   Can type `integrate w * (k / t)^w from t = k to infinity` at <https://www.wolframalpha.com/>
+
+## Prior Predictive Density Function
+
+-   Suppose $X$ (e.g. the dollar price of Bitcoin in the future) is uniform between $0$ and $\theta$ which has PDF $f\left(x \mid \theta\right) = \frac{1}{\theta}$
+
+-   What is the PDF of $X$ irrespective of $\theta$, if our beliefs about $\theta$ are distributed Pareto with minimum $k$ and shape $w$?
+
+. . .
+
+$$f\left(x \mid k, w\right) = 
+f\left(x \bigcap \bcancel{\theta} \mid k, w\right) =
+\int_{\max\left(k,x\right)}^{\infty} \frac{1}{\theta} 
+\frac{w k^w}{\theta^{w + 1}} d\theta = \\
+w k^w \int_{\max\left(k,x\right)}^{\infty} \theta^{-w - 2} d\theta = 
+\left.w k^w\frac{\theta^{-w - 1}}{-w - 1}\right|_{\max\left(k,x\right)}^\infty = \\
+w k^w \max\left(k,x\right)^{-w - 1} / \left(w + 1\right)$$
+
+```{r}
+#| echo: false
+library(rgl)
+bivariate <- function(theta, x) {
+  dpareto(theta, k, w) * ifelse(x >= k, 1 / theta, 0)
+}
+plot3d(bivariate, xlim = c(k, 3 * 10^5), ylim = c(0, 3 * 10^5),
+       zlab = "f", col = rainbow)
+dir.create("bivariate", showWarnings = FALSE)
+writeWebGL(dir = "bivariate", template = NULL, width = 900, height = 500)
+htmlwidgets::saveWidget(rglwidget(), file.path("bivariate", "index.html"))
+rgl.close()
+```
+
+## Bivariate PDF
+
+```{=html}
+<iframe width="900" height="1800" src="bivariate/index.html"></iframe>
+```
+
+## Drawing Joint Random Values in R
+
+Draw `R` times from the joint distribution of $\theta \bigcap X \mid k,w$
+
+. . .
+
+```{r}
+draws <- tibble(theta = rpareto(10^6, k, w),
+                X = runif(10^6, min = 0, max = theta))
+```
+
+What is the prior probability that $X > 100,000$?
+
+. . .
+
+```{r}
+summarize(draws, prob = mean(X > 100000))
+```
+
+What is the prior median of $X$?
+
+. . .
+
+```{r}
+summarize(draws, median(X))
+```
+
+## Posterior PDF (Lancaster ex. 1.19)
+
+-   Suppose you observe $x$ (i.e. the dollar price of Bitcoin today)
+
+-   What is the posterior PDF for $\theta \mid k, w, x$?
+
+. . .
+
+$$f\left(\theta \mid k, w, x\right) =
+\frac{ w k^w / \theta^{w + 1} \times 1 / \theta }
+{w k^w \max\left(k,x\right)^{-w - 1} / \left(w + 1\right)} = 
+\frac{w^\ast \left(k^\ast\right)^{w^\ast}}{\theta^{w^\ast + 1}}$$
+
+where $w^\ast = w + 1$ and $k^\ast = \max\left(k,x\right)$
+
+-   The posterior distribution remains in the Pareto family so the Pareto prior is conjugate with the uniform likelihood
+-   Any term in the numerator that doesn't depend on $\theta$ cancels
+
+## Posterior PDF Given $N$ Observations
+
+-   Suppose you have $N$ observations
+
+-   What is the posterior PDF of $\theta \mid k, w, x_1, x_2, \dots, x_N$?
+
+. . .
+
+-   The posterior PDF conditional on $N$ observations can be obtained by updating the Pareto prior $N$ times, yielding $$f\left(\theta \mid k, w, x_1, x_2, \dots, x_N\right) =
+    \frac{w^\ast \left(k^\ast\right)^{w^\ast}}{\theta^{w^\ast + 1}}$$ where $w^\ast = w + N$ and $k^\ast = \max\left(k, x_1, x_2, \dots, x_N\right)$
+
+## Posterior Predictive PDF {.smaller}
+
+-   How would you predict $X$ in $50$ years?
+
+. . .
+
+-   The posterior predictive density for a future $x_{N + 1}$ is in the same form as the prior predictive density found earlier (and can be derived in the same way), except evaluated at $k^\ast$ and $w^\ast$, rather than $k$ and $w$. Do the Bayesian hokey pokey:\
+    $$f\left(x_{N + 1} \mid w, k, x_1, x_2, \dots, x_N\right) = 
+    f\left(x_{N + 1} \bigcap \bcancel{\theta} \mid w, k, x_1, x_2, \dots, x_N\right) = \\
+    \int_k^\infty f\left(x_{N + 1} \mid \theta\right) 
+    f\left(\theta \mid x_1, x_2, \dots, x_N, k, w\right)d\theta = \\
+    \int_{\max\left(k^\ast, x_{N + 1}\right)}^\infty f\left(x_{N + 1} \bigcap \theta \mid 
+    k^\ast, w^\ast\right)d\theta =
+    w^\ast \left(k^\ast\right)^{w^\ast}
+    \frac{\max\left(k^\ast,x_{N + 1}\right)^{-w^\ast - 1}}{w^\ast + 1}$$
+
+-   After you beliefs about $\theta$ have been updated by conditioning on past data, you do not explicitly need the past data any more; i.e. $k^\ast$ and $w^\ast$ are all you need to predict $x_{N + 1}$
+
+## Conclusion
+
+-   You need a model, which includes your prior beliefs about the unknown parameters as expressed through a PDF
+
+-   In this case, the prior predictive PDF is elementary so we can derive the posterior PDF, which is also in the Pareto family
+
+-   From there, we can draw from the posterior predictive distribution of future data
+
+-   We can evaluate hypotheses about $\theta \mid k,w,x$ or $x_{n + 1} \mid k, w, x_1, x_2, \dots, x_N$
+
+-   But usually we will have to do it all with draws because the definite integrals cannot be evaluated exactly with a finite number of elementary operations
