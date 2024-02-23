@@ -1,0 +1,354 @@
+---
+title: "Hamiltonian Markov Chain Monte Carlo"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+preload-iframes: false  
+---
+
+## Obligatory Disclosure
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+## Bivariate Random Variables
+
+-   Suppose $S = \mathbb{R}^2$ (but it works with a subset thereof)
+
+-   $F\left(x, y \mid \theta\right) = \Pr\left(X \leq x \bigcap Y \leq y \mid \theta \right)$ is the CDF
+
+-   $f\left(x, y \mid \theta \right) = \frac{\partial^2}{\partial x\partial y}F\left(x,y\right)$ is the PDF
+
+-   $F\left(x,y \mid \theta\right) = \int_{-\infty}^y \int_{-\infty}^x f\left(u,v \mid \theta\right) du dv$
+
+-   $f_X\left(x \mid \theta\right) = \int_{-\infty}^\infty f\left(x, y \mid \theta\right) dy$ is the marginal(ized) PDF of $X$ and similarly $f_Y\left(y \mid \theta\right) = \int_{-\infty}^\infty f\left(x,y \mid \theta\right) dx$
+
+-   $f_{X \mid Y}\left(x \mid \theta, y\right) = \frac{f\left(x,y\mid \theta\right)}{f_Y\left(y\mid \theta\right)}$ is the conditional PDF of $X$ given that $Y = y$ and similarly $f_{Y \mid X}\left(y \mid \theta, x\right) = \frac{f\left(x,y\mid \theta \right)}{f_X\left(x \mid \theta\right)}$
+
+## Covariance and Correlation
+
+-   Suppose $S = \mathbb{R}^2$ and $Z = g\left(X, Y\right)$. Then, in general, $\mathbb{E}\left[g \mid \theta\right] = \int_{-\infty}^\infty \int_{-\infty}^\infty g\left(x,y\right) f\left(x,y\mid\theta\right)dxdy$
+
+. . .
+
+-   If $g\left(X, Y\right) = \left(X - \mu_X\right) \left(Y - \mu_Y\right)$, then $\mathbb{E}\left[g \mid \theta\right] = \mathbb{E}\left[XY \mid \theta\right] - \mu_X \mu_Y \equiv \sigma_{XY}$ is the covariance
+
+-   If $g\left(X, Y\right) = \left(\frac{X - \mu_X}{\sigma_X}\right) \left(\frac{Y - \mu_Y}{\sigma_Y}\right)$, then $\mathbb{E}\left[g \mid \theta\right]$ $$\begin{eqnarray} &=& \frac{1}{\sigma_X \sigma_Y}\int_{-\infty}^\infty \int_{-\infty}^\infty \left(x - \mu_X\right) \left(y - \mu_Y\right) f\left(x,y \mid \theta\right) dx dy\end{eqnarray}$$ $= \frac{\sigma_{XY}}{\sigma_X \sigma_Y} \equiv \rho \in \left[-1,1\right]$ is the correlation of $X$ and $Y$
+
+## Bivariate Normal over $S = \mathbb{R}^2$
+
+$f\left(x,y\mid \mu_X,\mu_Y,\sigma_X,\sigma_Y,\rho\right) =\\ \frac{1}{2\pi\sigma_X\sigma_Y\sqrt{1-\rho^2}}e^{-\frac{1}{2\left(1-\rho^2\right)} \left(\left(\frac{x - \mu_X}{\sigma_X}\right)^2 + \left(\frac{y - \mu_Y}{\sigma_Y}\right)^2 - 2\rho\frac{x - \mu_X}{\sigma_X}\frac{y - \mu_Y}{\sigma_Y}\right)} = \\ \frac{1}{\sigma_X\sqrt{2\pi}}e^{-\frac{1}{2}\left(\frac{x - \mu_X}{\sigma_X}\right)^2} \times \frac{1}{\color{blue}{\sigma_Y\sqrt{1-\rho^2}}\sqrt{2\pi}}e^{-\frac{1}{2} \left(\frac{y - \left(\color{red}{\mu_Y + \frac{\sigma_Y}{\sigma_X}\rho\left(x-\mu_x\right)}\right)} {\color{blue}{\sigma_Y\sqrt{1-\rho^2}}}\right)^2}$ where the first term is a marginal normal PDF for $X$ and the second is a conditional normal PDF for $Y \mid X = x$ with new parameters $\color{red}{\mu = \mu_Y + \frac{\sigma_Y}{\sigma_X}\rho\left(x-\mu_X\right)}$ & $\color{blue}{\sigma = \sigma_Y\sqrt{1-\rho^2}}$
+
+## Drawing from a Bivariate Normal
+
+```{r}
+#| eval: false
+# assumes mu_X, mu_Y, sigma_X, and sigma_Y are given or else drawn from their prior distribution
+tibble(X = rnorm(R, mean = mu_X, sd = sigma_X),
+       Y = rnorm(R, mean = mu_Y + sigma_Y / sigma_X * rho * (X - mu_X), 
+                 sd = sigma_Y * sqrt(1 - rho^2)))
+```
+
+## Bivariate Normal PDF
+
+```{r}
+#| echo: false
+dbinormal <- function(x, y, mu_X = 1, mu_Y = 3, 
+                      sigma_X = 2, sigma_Y = 4, rho = 1 / 5, 
+                      log = FALSE) {
+  mu <- mu_Y - sigma_Y / sigma_X * rho * (x - mu_X)
+  sigma <- sigma_Y * sqrt(1 - rho^2)
+  
+  log_density <- dnorm(x, mean = mu_X, sd = sigma_X, log = TRUE) + 
+    dnorm(y, mean = mu, sd = sigma, log = TRUE)
+  if (isTRUE(log)) return(log_density)
+  else return(exp(log_density))
+}
+```
+
+```{r}
+#| echo: false
+library(rgl)
+plot3d(dbinormal, xlim = c(-5, 8), ylim = c(-7, 15), 
+       zlab = "f", col = rainbow)
+dir.create("binormal", showWarnings = FALSE)
+writeWebGL(dir = "binormal", template = NULL, width = 1800, height = 900)
+htmlwidgets::saveWidget(rglwidget(), file.path("binormal", "index.html"))
+rgl.close()
+```
+
+```{=html}
+<iframe width="1800" height="900" src="binormal/index.html"></iframe>
+```
+## BioNTech / Pfizer Vaccine Again
+
+```{r}
+#| message: false
+library(dplyr)
+draws <- tibble(VE = pmin(1, rnorm(10^7, mean = 0.3, sd = 0.15)),
+                theta = (VE - 1) / (VE - 2),
+                Y = rbinom(10^7, size = 94, prob = theta)) |> 
+  filter(Y == 8)
+nrow(draws)
+```
+
+Thus, the estimate of $\Pr\left(y\right)$ is $\frac{`r nrow(draws)`}{10^7}$, which is deterministically
+
+```{r}
+joint <- function(VE) 
+  dnorm(VE, 0.3, 0.15) * dbinom(8, 94, prob = (VE - 1) / (VE - 2))
+integrate(joint, lower = -Inf, upper = 1)
+```
+
+-   Most of the original $10$ million draws were wasted
+
+-   This was with just $1$ discrete outcome observation
+
+-   Could we draw from $\text{VE}\left(\theta\right) \mid y, n, \dots$ directly?
+
+## Principles to Choose Priors With
+
+1.  Do not use improper priors (those that do not integrate to $1$)
+2.  Subjective, including "weakly informative" priors
+3.  Entropy Maximization
+4.  Invariance to reparameterization (particularly scaling)
+5.  "Objective" (actually also subjective, but different from 2)
+
+-   Choose a prior family that integrates to $1$ over $\Theta$. Then, choose hyperparameters that are consistent w/ your beliefs.
+-   The important part of a prior is what values it discounts. Draw from the prior predictive distribution to check.
+
+## *Ex Ante* P{D,M}F of *Ex Post* Data {.smaller}
+
+A likelihood function is the same expression as a P{D,M}F with 3 distinctions:
+
+1.  For the PDF or PMF, $f\left(\left.x\right|\boldsymbol{\theta}\right)$, we think of $X$ as a random variable and $\boldsymbol{\theta}$ as given, whereas we conceive of the likelihood function, $\mathcal{L}\left(\boldsymbol{\theta};x\right)$, to be a function of $\boldsymbol{\theta}$ (in the mathematical sense) evaluated only at the *observed* data, $x$
+    -   As a consequence, $\int\limits _{-\infty}^{\infty}f\left(\left.x\right|\boldsymbol{\theta}\right)dx=1$ or $\sum\limits _{x \in\Omega}f\left(\left.x\right|\boldsymbol{\theta}\right)=1$ while $\int_{-\infty}^{\infty}\int_{-\infty}^{\infty}\cdots\int_{-\infty}^{\infty} \mathcal{L}\left(\boldsymbol{\theta};x\right)d\theta_{1}d\theta_{2}\ldots d\theta_{K}$ may not exist and is rarely 1
+2.  We often think of "the likelihood function" for $N$ conditionally independent observations, so $\mathcal{L}\left(\boldsymbol{\theta};\mathbf{x}\right)=\prod _{n=1}^{N}\mathcal{L}\left(\boldsymbol{\theta};x_n\right)$
+3.  By "the likelihood function", we often really mean the natural logarithm thereof, a.k.a. the log-likelihood function $\ell\left(\boldsymbol{\theta};\mathbf{x}\right) = \ln\mathcal{L}\left(\boldsymbol{\theta},\mathbf{x}\right)=\sum_{n=1}^{N} \ln\mathcal{L}\left(\boldsymbol{\theta};x_n\right)$
+
+-   Bayesians (can) use the same log-likelihood functions as Frequentists
+
+## Normal Illustration
+
+$$
+\frac{1}{\sigma \sqrt{2 \pi}} e^{-\frac{1}{2} \left(\frac{x - \mu}{\sigma}\right)^2}
+$$
+
+-   For a given $\mu$ and $\sigma > 0$, the above PDF (of $x$) integrates to $1$ over $\Omega = \mathbb{R}$
+
+```{r}
+integrate(dnorm, lower = -Inf, upper = Inf, mean = 1, sd = 2)
+```
+
+-   For a given $x$ and $\mu$, the integral over $\Theta =\mathbb{R}_+$ of the above likelihood function (of $\sigma$) diverges
+
+```{r}
+integrate(dnorm, lower = 0, upper = Inf, x = 5 / 4, mean = 1, 
+          subdivisions = 10^4, stop.on.error = FALSE)
+```
+
+## Discrete-time Markov Processes
+
+-   A Markov process is a sequence of random variables where the future is *conditionally independent* of the past given the present, but nothing is *marginally independent* of anything
+-   Let $X_t$ have conditional PDF $f\left(x_t \mid x_{t - 1}\right)$. The joint PDF is $$f\left(x_1 \bigcap x_2 \bigcap \dots \bigcap x_T \mid x_0\right) = 
+    \prod_{t = 1}^T f\left(x_t \mid x_{t - 1}\right)$$
+-   What is $f\left(\bcancel{x_1} \bigcap \bcancel{x_2} \dots \bigcap x_T \mid x_0\right) = f\left(x_T \mid x_0\right)$? As $T \uparrow \infty$, $f\left(x_T \mid x_0\right) \rightarrow f\left(x_T\right)$, so we can draw from it
+
+## First Order Autoregressive Processes
+
+-   An AR1 model is the simplest (i.e. *linear*) Markov process where $x_t = m \left(1 - p\right) + p x_{t - 1} + \epsilon_t$ and $\epsilon_t$ is distributed normal with expectation zero and standard deviation $s$
+-   As $T \uparrow \infty$, the $T$-th realization of this process is distributed normal with expectation $m$ and standard deviation $\frac{s}{\sqrt{1 - p^2}}$
+
+```{r}
+#| message: false
+library(purrr)
+T <- 1000; R <- 10000
+m <- -1; s <- 2; p <- 0.5
+AR1 <- function(prev, epsilon) m * (1 - p) + p * prev + epsilon
+x_T <- map_dbl(1:R, ~ { # reduce() just keeps the T-th realization
+  reduce(rnorm(T, mean = 0, sd = s), AR1, .init = rpois(n = 1, 10))
+}) # there needs to be an x_0, but it does not matter what it is
+c(mean_diff = mean(x_T) - m, sd_diff = sd(x_T) - s / sqrt(1 - p^2))
+```
+
+## Visualization: AR1 Process $\left(R = 10\right)$
+
+```{r}
+#| echo: false
+library(ggplot2)
+library(dplyr)
+R <- 10
+draws <- tibble(r = as.factor(rep(1:R, each = (T + 1))),
+                t = rep(0:T, times = R)) |>
+  group_by(r) |> 
+  mutate(x = accumulate(rnorm(T, mean = 0, sd = s), AR1, 
+                        .init = rpois(n = 1, 10))) |> 
+  ungroup()
+ggplot(draws) +
+  geom_path(aes(x = t, y = x)) +
+  geom_hline(aes(yintercept = m), color = "red") +
+  facet_wrap(~ r, nrow = 2) +
+  labs(x = "time",
+       y = "x")
+```
+
+## Effective Sample Size {.smaller}
+
+-   What if we only executed the AR1 process once but kept the last $R$ realizations? They are all still $\mathcal{N}\left(m,\frac{s}{\sqrt{1 - p^2}}\right)$ as $T \uparrow \infty$ but not independent, which affects estimation.
+
+-   In an AR1 process, the correlation between $x_t$ and $x_{t \mp n}$ is $p^n$ where $\left|p\right| \leq 1$
+
+-   In general, if a Markov process mixes fast enough for the MCMC CLT to hold, then
+
+    -   The Effective Sample Size is $n_{eff} = \frac{R}{1 + 2\sum_{n=1}^\infty p_n}$, where $p_n$ is the correlation between two draws that are $n$ iterations apart
+    -   The MCMC standard error of the mean of the $R$ draws is $\frac{\sigma}{\sqrt{n_{eff}}}$ where $\sigma$ is the true posterior standard deviation of the parameter in question
+
+-   The MCMC algorithms in the 1990s (some combination of Gibbs, Metropolis-Hastings, and slice sampling) tended to have $p_n \approx 1$ for moderate $n$ and thus $n_{eff} \lll R$
+
+-   The MCMC algorithm in Stan since $2011$ tends to have $p_1 < 0$ and $p_n \approx 0$ otherwise and thus $n_{eff} > R$ or $n_{eff} \approx R$ , so $R$ can be reasonably sized
+
+## What if $p = -0.5$ in an AR1 Process?
+
+```{r}
+#| echo: false
+p <- -p
+draws <- tibble(r = as.factor(rep(1:R, each = (T + 1))),
+                t = rep(0:T, times = R)) |>
+  group_by(r) |> 
+  mutate(x = accumulate(rnorm(T, mean = 0, sd = s), AR1, 
+                        .init = rpois(n = 1, 10))) |> 
+  ungroup()
+ggplot(draws) +
+  geom_path(aes(x = t, y = x)) +
+  geom_hline(aes(yintercept = m), color = "red") +
+  facet_wrap(~ r, nrow = 2) +
+  labs(x = "time",
+       y = "x")
+```
+
+## Hamiltonian MCMC Algorithms, Part 1
+
+-   Stan's MCMC algorithm is more complicated than an AR1
+
+-   We take the natural log of Bayes' Rule, $\ln f\left(\boldsymbol{\theta} \mid \mathbf{y}, \dots\right) =$ $\ln f\left(\boldsymbol{\theta} \mid \dots\right) + \ln f\left(\mathbf{y} \mid \boldsymbol{\theta}\right) - \ln f\left(\mathbf{y} \mid \dots\right)$, where $\boldsymbol{\theta}$ is a vector of $K$ parameters and then introduce $\boldsymbol{\phi}$, which is a vector of $K$ momenta parameters w/ prior $\phi_k \thicksim \mathcal{N}\left(0,s_k\right)$
+
+-   Define "energy" as the sum of potential and kinetic energy
+
+```{=tex}
+\begin{eqnarray*}
+H\left(\boldsymbol{\theta}, \boldsymbol{\phi}\right) &=& -\left(\ln f\left(\boldsymbol{\theta} \mid \dots\right) + \ln f\left(\mathbf{y} \mid \boldsymbol{\theta}\right) - \ln f\left(\mathbf{y} \mid \dots\right)\right) \\ 
+&+& \sum_{k = 1}^K \left(\ln s_k + \frac{1}{2} \ln 2\pi + \frac{\phi_k^2}{2s_k^2}\right)
+\end{eqnarray*}
+```
+## Hamiltonian MCMC Algorithms, Part 2
+
+-   Since $\boldsymbol{\phi}_k$ does not enter the log-likelihood, its posterior distribution is the same as its normal prior distribution
+
+-   We choose starting $\left(r = 0\right)$ values for $\boldsymbol{\theta}$ somehow
+
+-   At iteration $r > 0$ of $R$, we draw each $\phi_k$ from its normal distribution and recalculate $H^{\left[r\right]} = H\left(\boldsymbol{\theta}^{\left[r - 1\right]}, \boldsymbol{\phi}^{\left[r\right]}\right)$
+
+-   Hamiltonian dynamics is a nonlinear Markov process that evolves the parameters over "time", such that potential and kinetic energy change but total energy is conserved at $H^{\left[r\right]}$
+
+-   Conservation of $H^{\left[r\right]}$ is crucial because it allows us to drop constants like $\ln f\left(\mathbf{y} \mid \dots\right)$, which we do not know anyway
+
+## Hamiltonian MCMC Algorithms, Part 3
+
+-   We need to solve an initial value problem that is governed by Hamilton's system of ODEs: $\frac{d\boldsymbol{\theta}}{dt} = \frac{\partial H}{\partial \boldsymbol{\phi}}$ and $\frac{d\boldsymbol{\phi}}{dt} = -\frac{\partial H}{\partial \boldsymbol{\theta}}$
+
+-   $\frac{\partial H}{\partial \boldsymbol{\phi}} = \frac{\boldsymbol{\phi}}{\mathbf{s}^2}$, and although $\frac{\partial H}{\partial \boldsymbol{\theta}}$ would be tedious for humans, it is easy for computers and doesn't involve $\frac{\partial \ln f\left(\mathbf{y} \mid \dots\right)}{\partial \boldsymbol{\theta}} = \mathbf{0}$
+
+-   If both the posterior and momentum were standard normal, $\theta\left(t\right) = r \cos \left(a + t\right)$ and $\phi\left(t\right) = -r \sin\left(a + t\right)$ whose constants, $r$ and $a$, could be determined at $t = 0$
+
+-   Hamiltonian dynamics is also reversable and volume-conserving, so this process produces draws of $\boldsymbol{\theta}$ and $\boldsymbol{\phi}$ whose PDF is proportional at all times to $e^{-H\left(\boldsymbol{\theta}, \boldsymbol{\phi}\right)}$
+
+## Hamiltonian MCMC Algorithms, Part 4
+
+-   The preceding Hamiltonian theory from physics presumes that time is continuous, but for MCMC, "time" is discretized
+
+-   The "leapfrog" method for solving initial-value problems works well but introduces a small amount of error each step
+
+    -   If the stepsize is sufficiently small, the error at one step tends to cancel with the error at another step
+
+    -   If the stepsize is too big, the error tends to accumulate, which can lead to a divergent transition
+
+    -   The global stepsize is tuned and for each $\phi_k$, its prior / posterior standard deviation $s_k$ is tuned to get a good $n_{eff}$ without divergent transitions
+
+## Hamiltonian MCMC Algorithms, Part 5
+
+-   In Stan, the total integration time at iteration $r$ is a random variable; i.e. the integration is stopped when the trajectories in positive time & negative time start to get closer together
+
+-   Once that happens, Stan chooses a realization of $\boldsymbol{\theta}^{\left[t\right]}$ and $\boldsymbol{\phi}^{\left[t\right]}$ with probability proportional to $f\left(\boldsymbol{\theta}^{\left[t\right]} \mid \mathbf{y}, \dots\right)$ as its proposal for iteration $r$ and then accepts that proposal or keeps the previous one by applying the Metropolis criterion
+
+-   In short, users need to specify $\ln f\left(\boldsymbol{\theta}, \dots\right) + \ln f\left(\mathbf{y} \mid \boldsymbol{\theta}\right)$ and the algorithm in Stan can (mostly) handle the rest
+
+## Video of [Original](http://www.stat.columbia.edu/~gelman/research/published/nuts.pdf) Stan [Algorithm](https://github.com/andrewGhazi/funstuff/blob/master/R/nuts.R)
+
+```{=html5}
+<iframe width="1120" height="630" src="https://www.youtube.com/embed/qxCQoZC0CVY" title="NUTS Animation" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+```
+## Stan Language
+
+Stan also includes its own computer language that we are not covering in GR5065, but it is not difficult to learn later on
+
+```{stan output.var="mod"}
+#| eval: false
+#| code-line-numbers: 1|2-7|8-10|11-13|14-17|18
+// This Stan program draws from the posterior Pfizer should have used
+data { // everything to the right of the | in Bayes' Rule
+  real<upper = 1> m; // expectation for normal prior on VE
+  real<lower = 0> s; // standard deviation for normal prior on VE
+  int<lower = 0>  n; // number of people with Covid in the RCT
+  int<lower = 0, upper = n> y; // number of them who were vaccinated
+}
+parameters { // everything to the left of the | in Bayes' Rule
+  real<upper = 1> VE; // = 1 - Pr(covid | vax) / Pr(covid | placebo)
+}
+transformed parameters { // any function of parameters worth keeping
+  real<lower = 0, upper = 1> theta = (VE - 1) / (VE - 2);
+}
+model { // target has been initialized to zero basically
+  target += normal_lpdf(VE | m, s);      // prior log-kernel
+  target += binomial_lpmf(y | n, theta); // log-likelihood
+} // model block is like a function that returns target
+
+```
+
+## Warnings You Should Be Aware Of (1)
+
+Unlike 1990s MCMC algorithms, Stan warns you when things do not go well, which you must heed
+
+1.  Divergent Transitions: This means the tuned stepsize ended up too big relative to the curvature of the log-kernel
+    -   Increase `adapt_delta` above its default value ($0.8$)
+
+    -   Use more informative priors
+2.  Hitting the maximum treedepth: This means the tuned stepsize ended up so small that it could not get all the way around the parameter space in one iteration
+    -   Increase `max_treedepth` beyond its default value of $10$
+
+## Warnings You Should Be Aware Of (2)
+
+3.  Bulk / Tail Effective Sample Size too low: This means the tuned stepsize ended up so small that adjacent draws have too much dependence
+    -   Increase the number of iterations or chains
+4.  $\widehat{R} > 1.01$: This means the chains have not converged
+    -   You could try running the chains longer, but there is probably a deeper problem
+5.  Low Bayesian Fraction of Information: This means that you posterior distribution has really extreme tails
+    -   You could try running the chains longer
