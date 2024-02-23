@@ -1,0 +1,169 @@
+---
+title: "GR5065 Homework 2"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+pdf-engine: xelatex
+editor: visual
+execute: 
+  echo: true
+keep-tex: true
+---
+
+# Economic Growth
+
+**You must complete 1.3 before Wednesday, February 28th at 8:30AM**
+
+The concept of the total output of an economy is used in almost every social science model where the units of observation are countries (or country-periods). However, no country "counts" up all the transactions that occur within its jurisdiction. Rather, what is referred to as "data" on Gross Domestic Product (GDP) or GDP per capita is the output of some model, and different models produce different values of the same theoretical concept.
+
+In addition, there are (at least) two different approaches to modeling it, either as total expenditures or as total income received. To better understand the two methods that are used by the U.S. government to estimate its annualized growth rate, first read this [paper](https://obamawhitehouse.archives.gov/sites/default/files/docs/gdo_issue_brief_final.pdf).
+
+To attempt to reduce confusion, let's refer to $\mu_t$ as the *concept* of percentage growth in total (inflation-adjusted) economic output in period $t$. Then, $P_t$ is an estimate of $\mu_t$ produced by the expenditure approach to measuring GDP. Conversely, $I_t$ is another estimate of $\mu_t$ produced by the income approach to measuring Gross Domestic Income (GDI).
+
+You can download quarterly data on GDI, GDP, and GDO (which is the average of GDI and GDP, converted to an annualized growth rate to be comparable with the other two) via:
+
+```{r}
+#| message: false
+library(dplyr)
+FRED <- "https://fred.stlouisfed.org/graph/fredgraph.csv?&id="
+SERIES <- c(GDI = "A261RL1Q225SBEA",
+            GDP = "A191RL1Q225SBEA",
+            GDO = "LB0000091Q020SBEA")
+dataset <- readr::read_csv(paste0(FRED, paste(SERIES, collapse = ",")),
+                           progress = FALSE, show_col_types = FALSE,
+                           na = ".") |>
+  rename(quarter_startdate = DATE, 
+         GDI = A261RL1Q225SBEA, 
+         GDP = A191RL1Q225SBEA, 
+         GDO = LB0000091Q020SBEA) |>
+  mutate(GDO = ((GDO / lag(GDO))^4 - 1) * 100) |> 
+  arrange(desc(quarter_startdate))
+```
+
+Assume that$$P_t = \mu_t + \sigma\epsilon_t$$ $$I_t = \mu_t + \sigma\nu_t$$
+
+where $\epsilon_t$ is the error in GDP growth and $\nu_t$ is the error in GDI growth, which are assumed to be independent of each other (and $\mu_t$) and standard normal. The scale factor, $\sigma$, on the errors is positive. If so, then$$P_t - I_t = \sigma\left(\epsilon_t - \nu_t\right)$$
+
+which has an expectation of zero and a variance of $$\mathbb{E}\left[\left(P_t - I_t\right)^2\right] = \sigma^2 \mathbb{E}\left[\left(\epsilon_t - \nu_t\right)^2\right] = \sigma^2 \mathbb{E}\left[\epsilon_t^2 - 2\epsilon_t \nu_t + \nu_t^2\right] = \sigma^2\left(\mathbb{E}\left[\epsilon_t^2\right] + \mathbb{E}\left[\nu_t^2\right]\right) = 2\sigma^2$$ Thus, for simplicity, we can form a point estimate for $\sigma$ from before the pandemic via
+
+```{r}
+sigma <- 
+  filter(dataset, quarter_startdate < "2020-01-01") |> 
+  summarize(sigma = sqrt(0.5 * var(GDP - GDO, na.rm = TRUE))) |> 
+  pull(sigma)
+```
+
+that you should utilize in answering the following questions.
+
+## Correlation
+
+The above assumes that $P_t$ and $I_t$ are uncorrelated conditional on $\mu_t$, which is perhaps reasonable considering that they are mostly estimated using different data. However, irrespective of the unknown $\mu_t$, `GDI` and `GDP` are correlated at about $0.9$ in the data, as can be seen from
+
+```{r}
+filter(dataset, !is.na(GDI)) |> 
+  summarize(rho = cor(GDI, GDP))
+```
+
+Suppose that you have a normal prior for $\mu_t$ with expectation $m$ and standard deviation $s$ whose values you have to choose. Construct a tibble with 300 rows and three columns: one called `mu` which contains draws from your normal prior, one called `I` that is drawn from a normal distribution with mean `mu` and standard deviation `sigma`, and one called `P` that is also drawn from a normal distribution with mean `mu` and standard deviation `sigma`. What values of $m$ and $s$ yield an estimated correlation between `P` and `I` of about $0.9$?
+
+## Fourth Quarter of 2023
+
+On January 25, 2024, the U.S. government reported its initial estimate of $3.3$% for $P$ in the last quarter of 2023, which was considerably greater than reported expectations at the time of about $1.8$%. The U.S. government will not report its initial estimate of $I$ until March 28th.
+
+You can use $1.8$ as a prior mean for economic growth in the fourth quarter of 2023 but you should use your value of $s$ from the previous subproblem to construct a tibble with $1$ million rows and (new realizations of) the same three columns as in the previous subproblem. Then, use the `between` function to condition on the event that `P` is between $3.25$ and $3.35$ and thus rounds to the $3.3$% reported by the U.S. government. Use the `geom_density` function in the ggplot2 package to plot the conditional densities of $\mu$ and `I`. How do the shapes of these density functions differ and why?
+
+## Second Estimate
+
+The U.S. government will report its second estimate for last quarter's $P$ on Wednesday, February 28th, at 8:30AM at <https://www.bea.gov/> , so you should complete this subproblem before that. What do you think is a reasonable normal prior distribution for the second estimate for $P$ given that the first estimate of $P$ was $3.3$% in January but its expectation at the time was only $1.8$%?
+
+## Posterior PDF
+
+After the second estimate of $P$ for the fourth quarter of 2023 is released, use your normal prior from 1.3, the normal likelihood function from 1.2, and the `integrate` function to obtain the posterior PDF for $\mu \mid P, \dots$ in the fourth quarter of 2023. Use the `geom_function` function in the ggplot2 package to plot this posterior PDF.
+
+# Equilibrium Climate Sensitivity
+
+Read this [paper](https://esd.copernicus.org/articles/11/347/2020/) by Annan and Hargreaves, and you might also want to look at their R code, which can be downloaded with
+
+```{r}
+FILE <- "esd-11-347-2020-supplement.zip"
+if (!file.exists(FILE)) {
+  download.file(paste0("https://esd.copernicus.org/articles/11/347/2020/", FILE),
+                destfile = FILE)
+}
+unzip(FILE)
+# .R files used to make the figures in the paper are in the code/ subdirectory
+```
+
+Annan and Hargreaves investigates the unknown Equilibrium Climate Sensitivity, which is denoted $S$ and can be [defined](https://en.wikipedia.org/wiki/Climate_sensitivity) as "the average change in global mean surface temperature in response to radiative forcing, which drives a difference between Earth's incoming and outgoing energy." The "forcing" in question is often operationalized as a doubling in the concentration of carbon dioxide in the atmosphere over a few centuries.
+
+Although there are many social science implications of global warming caused by humans, the chemistry behind $S$ goes well beyond what most social scientists are familiar with. Nevertheless, it is important and a good opportunity to apply the process of Bayesian inference. If there are some phrases in the article or chemistry concepts that you do not understand, you can certainly clarify them on Ed Discussion.
+
+## Measurement Model
+
+In section 2 of the paper, Annan and Hargreaves put forward equation (1)$$x_o = x_T + \epsilon$$
+
+as a measurement model that is "fundamental to of observations in many scientific domains", including global warming. In equation (1), $x_o$ is the *observed* value and $x_T$ is the unknown *true* value, which differs from the observed value by a random error, $\epsilon$, whose distribution is assumed to be normal with expectation zero and standard deviation $\sigma$ (which may sometimes be considered known but often is not).
+
+-   Explain how this measurement model framework is applicable to the previous problem on economic growth
+
+## Confusion of the Inverse
+
+Annan and Hargreaves claim that many other researchers implicitly or explicitly use this measurement model to reach the incorrect conclusion that $x_T$ is distributed normal with expectation $x_o$ and standard deviation $\sigma$.
+
+-   Explain why this is both a "category error" (in the words of Annan and Hargreaves) and yet "does actually work rather well in many cases"
+
+## Paleoclimate Comparisons
+
+In equation (3), Annan and Hargreaves assert that the Equilibrium Climate Sensitivity can be written as$$S = F_{2\times} \frac{\Delta T}{\Delta F},$$ where $F_{2\times}$ is the forcing due to a doubling of carbon dioxide and is assumed, for simplicity, to be $3.7$ Watts per square-meter (which is what $Wm^{-2}$ means). Compared to a period a long time ago (before there were humans), the change in temperature $\left(\Delta T\right)$ in the numerator is assumed to be normal with an expectation of $5$ and a standard deviation of $1.5$, while the change in forcing $\left(\Delta F\right)$ from carbon dioxide in the denominator is assumed to be normal with an expectation of $9$ and a standard deviation of $2$.
+
+-   Create a tibble with $R = 10^7$ rows that have realizations on three columns: one for the numerator, one for the denominator, and one for $S$ and plot the density of $S$ using the `geom_density` function in the ggplot2 package over a reasonable range of values using the `xlim` function. How would you describe the implied distribution of $S$?
+
+## Ratio Distribution
+
+Let the continuous random variable, $X$, be normally distributed with expectation $\mu_X$ and standard deviation $\sigma_X$. Similarly, let the continuous random variable, $Y$, be independent of $X$ but also normally distributed with expectation $\mu_Y$ and standard deviation $\sigma_Y$ . The Probability Density Function (PDF) of the random variable $Z = \frac{X}{Y}$ over $\Theta = \mathbb{R}$ is rather complicated but helpfully given on [Wikipedia](https://en.wikipedia.org/wiki/Ratio_distribution#Uncorrelated_noncentral_normal_ratio), where $\Phi\left(t\right)$ is the standard normal Cumulative Distribution Function (CDF) and is implemented in R by the `pnorm` function, whose default arguments are `mean` of zero and `sd` of one.
+
+-   Write an R function for the PDF of $Z$ that starts like this
+
+```{r}
+dratio <- function(z, mu_X, mu_Y, sigma_X, sigma_Y) {
+  # define a 
+  # define b
+  # define c
+  # define d
+  # maybe do some more intermediate steps
+  # return the density
+}
+```
+
+-   How do you know that your implementation of `dratio` is admissible as a PDF?
+
+## Posterior Distributions
+
+In the rest of the paper Annan and Hargreaves essentially ask the question "What prior distributions are consistent with various papers in the previous literature that commit the aforementioned category error?" In particular, in section 3.3.2 Annan and Hargreaves refers to a 2006 paper by Forster and Gregory (which you do not need to read) that comes up with an estimate for the feedback, $\lambda = \frac{F_{2\times}}{S}$, that is normal with an expectation of $2.3$ and a standard deviation of $0.7$. Annan and Hargreaves considers three priors, the most interesting of which is a half-Cauchy prior for $S$ over $\mathbb{R}_+$, which has the PDF$$f\left(S \mid m, s\right) = \frac{2}{\pi} \frac{s}{\left(S - m\right)^2 + s^2}$$
+
+where $m$ is the mode parameter that Annan and Hargreaves specified to be zero and $s$ is a scale factor that Annan and Hargreaves specifies to be $5$. One interesting fact about a Cauchy prior for $S$ is that $\frac{1}{S}$ has the same distribution but with scale $\frac{1}{s}$, in which case $\lambda$ is distributed Cauchy with a mode of zero and a scale of $\frac{F_{2\times}}{5}$. In code/fig5.R, Annan and Hargreaves essentially does
+
+```{r}
+Forster_Gregory <-
+  tibble(S = abs(rcauchy(10^7, location = 0, scale = 5)),
+         lambda = 3.7 / S,
+         wt_csp = dnorm(lambda, mean = 2.3, sd = 0.7)) |> 
+  # a crude way of approximating the denominator in Bayes' Rule
+  mutate(wt_csp = wt_csp / sum(wt_csp))
+
+plot(density(Forster_Gregory$S, weights = Forster_Gregory$wt_csp, 
+             from = 0, to = 12.775, bw = 0.05), col = "magenta",
+     main = "", xlab = "Equilibrium Climate Sensitivity", 
+     ylab = "Posterior Density", las = 1, xlim = c(0, 10))
+```
+
+-   Throughout the paper, Annan and Hargreaves assume that $F_{2\times} = 3.7$, as opposed to considering it another unknown to specify a prior over. Redo the above calculations assuming a normal prior for $F_{2\times}$ with an expectation of $3.7$ and some reasonable standard deviation. How do the results change?
+
+## Subjectivity
+
+Ronald Fisher died in 1962 before there was much published research on global warming. Thus, although Fisher did not address global warming explicitly, he said a great deal about his philosophy of science in general. If, hypothetically, Fisher had taken the same perspective on global warming as he did for the rest of science, what do you think he would say about Annan and Hargreaves' analysis?
