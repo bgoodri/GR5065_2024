@@ -1,0 +1,159 @@
+---
+title: "Recitation for Week06"
+author: "Apoorva Joshi"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Setup
+
+-   Open RStudio and the GR5065 project
+
+-   Click on the blue arrow in the Git tab
+
+-   Change your working directory to Week06
+
+## Introduction
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   For 200 years, Bayesians were stumped by the denominator $$f\left(\mathbf{y} \mid \dots\right) = \int\limits_{-\infty}^\infty \cdots \int\limits_{-\infty}^\infty f\left(\boldsymbol{\theta} \mid \dots \right) f\left(\mathbf{y}\mid \boldsymbol{\theta}\right)d\theta_1 \dots d\theta_K$$
+
+-   Bayesian inference was completely general in theory since 1790 but was not, in general, practical to conduct until 1990
+
+-   Nowadays, we can use Markov Chain Monte Carlo (MCMC) to get $R$ *dependent* draws of $\boldsymbol{\theta} \mid \mathbf{y}$ without rejecting many
+
+-   The Hamiltonian physics-based MCMC algorithm in Stan generally has better $n_{eff}$ than 1990s MCMC algorithms
+
+## AR1 Processes vs. Hamiltonian MCMC
+
+$H\left(\boldsymbol{\theta}, \boldsymbol{\phi}\right) = C -\ln f\left(\boldsymbol{\theta} \mid \mathbf{y}\right) + \sum_{k = 1}^K \left(\ln s_k + \frac{1}{2}\ln 2\pi + \frac{\phi_k}{2s_k^2}\right)$
+
+| Concept                        | Autoregressive                                            | Hamiltonian MCMC                                                                                                                                                                                                                                                   |
+|--------------------------------|-----------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| #dimensions                    | $1$ (at least here)                                       | $K$ (2 or 3 in real physics)                                                                                                                                                                                                                                       |
+| Time                           | Discrete                                                  | Continuous (discretized)                                                                                                                                                                                                                                           |
+| Randomness                     | $\epsilon_t \thicksim \mathcal{N}\left(0,s\right)$        | $\phi_k \thicksim \mathcal{N}\left(0, s_k\right)$ at $t = 0$                                                                                                                                                                                                       |
+| Updating rule in time          | $x_t = m \left(1 - p\right)\\ + p x_{t - 1} + \epsilon_t$ | $\boldsymbol{\theta}\left(t\right), \boldsymbol{\phi}\left(t\right)$ such that $\dot{\boldsymbol{\theta}}\left(t\right) = \frac{\partial H}{\partial \boldsymbol{\phi}}, \dot{\boldsymbol{\phi}}\left(t\right) = -\frac{\partial H}{\partial \boldsymbol{\theta}}$ |
+| Correlation: $t$ and $t \mp n$ | $p^n$ so sign depends on $p$                              | Usually negative for $n = 1$ and near zero otherwise                                                                                                                                                                                                               |
+
+## Stan Program (no need to copy down)
+
+```{stan output.var="mod"}
+#| code-line-numbers: 1|2-7|8-10|11-13|14-17|18
+#| eval: false
+// This Stan program draws from the posterior Pfizer should have used
+data { // everything to the right of the | in Bayes' Rule
+  real<upper = 1> m; // expectation for normal prior on VE
+  real<lower = 0> s; // standard deviation for normal prior on VE
+  int<lower = 0>  n; // number of people with Covid in the RCT
+  int<lower = 0, upper = n> y; // number of them who were vaccinated
+}
+parameters { // everything to the left of the | in Bayes' Rule
+  real<upper = 1> VE; // = 1 - Pr(covid | vax) / Pr(covid | placebo)
+}
+transformed parameters { // any function of parameters worth keeping
+  real<lower = 0, upper = 1> theta = (VE - 1) / (VE - 2);
+}
+model { // target has been initialized to zero basically
+  target += normal_lpdf(VE | m, s);      // prior log-kernel
+  target += binomial_lpmf(y | n, theta); // log-likelihood
+} // model block is like a function that returns target
+```
+
+. . .
+
+This is also in the vaccine.stan file in Week06/
+
+## Exercise: Write the Numerator in R
+
+-   Prior for `VE` is normal with expectation $m = 0.3$ and standard deviation $s = 0.15$
+
+-   $\theta = \frac{\text{VE} - 1}{\text{VE} - 2}$ is a deterministic function of VE and the `prob` of a binomial likelihood
+
+-   Likelihood of $\theta$ is binomial with `y = 8` vaccinated people in the trial getting covid out of `size = 94` total infections
+
+-   Write a R function to evaluate the numerator *in log form*
+
+```{r}
+numer <- function(VE, m = 0.3, s = 0.15, y = 8, n = 94) {
+  # fill in the rest (utilizing log = TRUE arguments)
+  # return the log density
+}
+```
+
+## Answer to Exercise
+
+```{r}
+numer <- function(VE, m = 0.3, s = 0.15, y = 8, n = 94) {
+  theta <- (VE - 1) / (VE - 2)
+  dnorm(VE, mean = m, sd = s, log = TRUE) + 
+    dbinom(y, size = n, prob = theta, log = TRUE)
+}
+```
+
+Here is the fancy way to also get the derivative in R
+
+```{r}
+numer <- deriv(target ~ -0.5 * log(2 * pi) - log(s) -
+                 0.5 * ((VE - m) / s)^2 + 
+                 lfactorial(n) - lfactorial(y) - lfactorial(n - y) + 
+                 y * log((VE - 1) / (VE - 2)) + 
+                 (n - y) * log1p(-(VE - 1) / (VE - 2)),
+               namevec = "VE", function.arg = 
+               function(VE, m = 0.3, s = 0.15, y = 8, n = 94) {})
+```
+
+The Hamiltonian physics model implies that the *total* derivative of momentum with respect to time can be written in terms the *partial* derivatives of the logarithm of the numerator of Bayes' Rule. The velocity of the parameters is also easy.
+
+## Results of the Stan MCMC Algorithm
+
+You do not need to do this yourself, so we did it for you and put the results in CSV files in the Wee06/ subdirectory on GItHub
+
+```{r, post}
+post <- rstan::read_stan_csv(paste0("vaccine_", 1:4, ".csv"))
+post
+```
+
+. . .
+
+Do this in your R session and click along with me in a browser
+
+```{r}
+#| eval: false
+shinystan::launch_shinystan(post)
+```
+
+## Hypothesis Evaluation
+
+```{r}
+#| message: false
+library(dplyr)
+as.data.frame(post) |> 
+summarize(prob = mean(VE > 0.6))
+```
+
+-   Thus, the posterior probability that the effectiveness of the vaccine is less than $0.6$ is negligible, so the FDA's decision to approve the BioNTech / Pfizer vaccine would be obvious
+
+-   However, with only $n = 94$ observations (in this study), we are legitimately somewhat uncertain as to what the effectiveness of the vaccine actually was (in late 2020). The posterior PDF for VE would be *roughly* normal with an expectation of $0.84$ and a standard deviation of $0.05$.
+
+## Conclusion
+
+-   You need a model, which includes your prior beliefs about the unknown parameters as expressed through a PDF
+-   That model implies some numerator of Bayes Rule
+-   Provided the numerator is differentiable almost everywhere, Stan will either draw from that posterior distribution or give you warnings that it had trouble (there were none today)
+-   Once you get (correct) draws from the posterior, how you obtained them has no bearing on how you interpret them
