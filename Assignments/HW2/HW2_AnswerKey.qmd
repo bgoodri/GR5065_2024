@@ -1,0 +1,175 @@
+---
+title: "GR5065 Homework 2 Answer Key"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+pdf-engine: xelatex
+editor: visual
+execute: 
+  echo: true
+keep-tex: true
+---
+
+# Economic Growth
+
+```{r}
+#| message: false
+library(dplyr)
+FRED <- "https://fred.stlouisfed.org/graph/fredgraph.csv?&id="
+SERIES <- c(GDI = "A261RL1Q225SBEA",
+            GDP = "A191RL1Q225SBEA",
+            GDO = "LB0000091Q020SBEA")
+dataset <- readr::read_csv(paste0(FRED, paste(SERIES, collapse = ",")),
+                           progress = FALSE, show_col_types = FALSE,
+                           na = ".") |>
+  rename(quarter_startdate = DATE, 
+         GDI = A261RL1Q225SBEA, 
+         GDP = A191RL1Q225SBEA, 
+         GDO = LB0000091Q020SBEA) |>
+  mutate(GDO = ((GDO / lag(GDO))^4 - 1) * 100) |> 
+  arrange(desc(quarter_startdate))
+```
+
+```{r}
+sigma <- 
+  filter(dataset, quarter_startdate < "2020-01-01") |> 
+  summarize(sigma = sqrt(0.5 * var(GDP - GDO, na.rm = TRUE))) |> 
+  pull(sigma)
+```
+
+## Correlation
+
+```{r}
+m <- 2.5
+s <- 2.0
+R <- 300
+tibble(mu = rnorm(R, mean = m,  sd = s),
+       P  = rnorm(R, mean = mu, sd = sigma),
+       I  = rnorm(R, mean = mu, sd = sigma)) |> 
+  summarize(rho = cor(P, I))
+```
+
+## Fourth Quarter of 2023
+
+```{r}
+#| message: false
+library(ggplot2)
+R <- 10^6
+tibble(mu = rnorm(R, mean = 1.8, sd = s),
+       P  = rnorm(R, mean = mu, sd = sigma),
+       I  = rnorm(R, mean = mu, sd = sigma)) |> 
+  filter(between(P, left = 3.25, right = 3.35)) |> 
+  ggplot() +
+  geom_density(aes(x = mu), color = "black") +
+  geom_density(aes(x = I),  color = "red")
+
+```
+
+The conditional distribution for $\mu$ and for $I$ given that $P \approx 3.3$ in the fourth quarter of 2023 have a similar center. However, the distribution for $I$ (in red) has more dispersion than the distribution for $\mu$ (in black) because the measurement of GDI has additional error with standard deviation $\sigma \approx 0.7$ above and beyond the fundamental uncertainty in knowing the true $\mu$ in a given quarter.
+
+## Second Estimate
+
+Conceptually, the best prior for the second estimate of $P$ for the fourth quarter of 2023 would be based on the posterior distribution of $\mu$ from the previous subproblem, which was roughly normal with an expectation of $3.14$ and a standard deviation of about $0.65$. The second estimate of $P$ also has measurement error, although perhaps less than the first estimate but we will use `sigma` anyway.
+
+## Posterior PDF
+
+```{r}
+p <- 3.2
+joint <- function(mu) {
+  dnorm(mu, mean = 3.14, sd = 0.65) *
+    dnorm(p, mean = mu, sd = sigma)
+}
+marginal <- integrate(joint, lower = -Inf, upper = Inf)$value
+ggplot() + 
+  xlim(0, 6) +
+  geom_function(fun = ~ joint(.x) / marginal)
+```
+
+# Equilibrium Climate Sensitivity
+
+## Measurement Model
+
+The previous problem utilizes a special case of this measurement model where $\mu_t$ is $x_T$ and either $P_t$ or $I_t$ is $x_o$ . In other words, the U.S. government's *measurements* of GDP and GDI --- which come from a model with preliminary inputs --- randomly differ from the unknown true growth rate by a measurement error that was assumed to be normal with expectation zero and standard deviation $\sigma \approx 0.7$.
+
+## Confusion of the Inverse
+
+Bayes' Rule implies that$$f\left(x_T \mid x_o, \dots\right) = \frac{f\left(x_T \mid \dots\right) f\left(x_o \mid x_T\right)}{f\left(x_o \mid \dots\right)}$$ so in general, it is simply wrong mathematically and conceptually to use the same PDF for $x_T \mid x_o$ as for $x_o \mid x_T$. However, if the prior PDF for $x_T$ and the marginal PDF for $x_o$ are equal --- which is to say that $f\left(x_T \mid \dots\right) = f\left(x_o \mid \dots\right)$ --- then, mathematically at least $f\left(x_T \mid x_o, \dots\right) = f\left(x_o \mid x_T\right)$ if there are no other unknown parameters (i.e. $\sigma$ is presumed known, as in the last problem). This equality holds if $x_T$ is given a uniform prior over a wide finite or perhaps infinite range.
+
+But to (implicitly) use a uniform distribution over $x_T$ in order to obtain $f\left(x_T \mid x_o, \dots\right) = f\left(x_o \mid x_T\right)$ is a post-hoc rationalization rather than a justification for a uniform prior. Did you actually have uniform beliefs about $x_T$ prior to collecting the data? If not, then you should have used a non-uniform prior. Did your audience actually have uniform beliefs about $x_T$ prior to reading your study? If not, then it is not clear what the value-added of your study is. Did you draw randomly from your uniform prior and then use those realizations to draw from the conditional distribution of the data to see if the marginal distribution of predictions was reasonable? In addition, if you use a uniform distribution over an infinite range, then the prior distribution is not proper and you have to verify mathematically whether $f\left(x_o \mid \dots\right) = \int_\Theta f\left(x_o \mid x_T\right) dx_T$ exists and is finite.
+
+Despite all that, if someone did have an approximately uniform prior over $x_T$ over some finite range, such that the uncertainty in the prior was much greater than the uncertainty in $x_o \mid x_T$, then the posterior PDF, $f\left(x_T \mid x_o, \dots\right)$, is approximately $f\left(x_o \mid x_T\right)$. But that conclusion is not something that you should rely on, particularly since it is now straightforward to obtain many draws from the posterior distribution of $x_T \mid x_o, \dots$ without uniform priors or approximations. In the situation considered by Annan and Hargreaves, scientists do not have uniform prior beliefs about $S$, so there is no substantive reason to make the category error.
+
+This confusion is somewhat similar to researchers conflating the mean, median, and mode of a probability distribution. Those three *concepts* are different, even though they are all used to describe the "center" of a probability distribution. However, if the probability distribution is roughly symmetric, then estimates of those three concepts will turn out to be similar *numbers*. That does not imply that the mode and the mean are interchangeable and presuming that a distribution is symmetric in order to use the mode as the mean is a dubious practice.
+
+## Paleoclimate Comparisons
+
+```{r}
+R <- 10^7
+tibble(numer = rnorm(R, mean = 5, sd = 1.5),
+       denom = rnorm(R, mean = 9, sd = 2),
+       S = 3.7 * numer / denom) |> 
+  ggplot() +
+  geom_density(aes(S)) + 
+  xlim(-2, 12)
+```
+
+This distribution has a mode near $2$ but is slightly skewed toward higher values. Moreover, it has very heavy tails, which can be seen from the warning message indicating that there are a small percentage of draws of $S$ outside the $\left[-2, 12\right]$ interval plotted here.
+
+## Ratio Distribution
+
+```{r}
+dratio <- function(z, mu_X, sigma_X, mu_Y, sigma_Y) {
+  var_X <- sigma_X^2
+  var_Y <- sigma_Y^2
+  
+  a <- sqrt(z^2 / var_X  + 1 / var_Y)
+  b <- mu_X / var_X * z + mu_Y / var_Y
+  c <- mu_X^2 / var_X + mu_Y^2 / var_Y
+  aa <- a^2
+  d <- exp( (b^2 - c * aa) / (2 * aa) )
+  
+  sigma_X_sigma_Y <- sigma_X * sigma_Y
+  b * d / (a^3 * (sqrt(2 * pi) * sigma_X_sigma_Y)) *
+    (pnorm(b / a) - pnorm(-b / a)) +
+    exp(-0.5 * c) / (aa * pi * sigma_X_sigma_Y)
+}
+```
+
+All the terms are positive, so the curve will take positive values over $\mathbb{R}$. In addition,
+
+```{r}
+integrate(dratio, lower = -Inf, upper = Inf, 
+          mu_X = 5, sigma_X = 1.2, mu_Y = 9, sigma_Y = 2)
+```
+
+so the formula in Wikipedia is presumably correct and we have implemented it in R correctly.
+
+In this situation (and many other situations), it is much easier to simulate a numerator and a denominator independently from their normal distributions than to work with the PDF of their ratio. Nevertheless, a ratio is only one random variable, whereas if the numerator and denominator have marginal distributions, then you have two random variables to deal with, which is much more difficult when doing ancient calculations. When doing modern calculations, it is really no more difficult either way.
+
+## Posterior Distributions
+
+```{r}
+draws <-
+  tibble(S = abs(rcauchy(R, location = 0, scale = 5)),
+         lambda = rnorm(R, mean = 3.7, sd = 1) / S,
+         wt_csp = dnorm(lambda, mean = 2.3, sd = 0.7)) |> 
+  mutate(wt_csp = wt_csp / sum(wt_csp))
+
+plot(density(draws$S, weights = draws$wt_csp, 
+             from = 0, to = 12.775, bw = 0.05), col = "magenta",
+     main = "", xlab = "Equilibrium Climate Sensitivity", 
+     ylab = "Posterior Density", las = 1, xlim = c(0, 12))
+```
+
+Introducing uncertainty in the estimate of $F_{2\times}$ induces more uncertainty in the posterior PDF of $S$ given the data (and priors). As compared to the last plot in Annan and Hargreaves, the mode near two has lower density and the right tail is thicker.
+
+## Subjectivity
+
+If, hypothetically, Fisher had taken the same perspective on global warming as he did for the rest of science, he would have said that the only way we could be objective about $S$ would be to do an experiment where we take a bunch of planets that are similar to the Earth, double the carbon dioxide concentration in a randomly chosen half of them over a couple of centuries, wait a few more centuries for their climates to reach equilibrium, and then perhaps test the null hypothesis of no difference in average global temperature between the treated planets and the control planets. Since such an experiment is obviously not feasible, then Fisher would say that we should not say anything subjectively about the Earth's $S$ due to doubling of carbon dioxide since industrialization. In other words, Fisher would reject an analysis along the lines of Annan and Hargreaves due to their use of prior distributions for $S$, which in Fisher's view is not a random variable.
+
+Clearly, actual climate scientists disagree with the proposition that we should not say anything about $S$. However, Annan and Hargreaves feel that it is necessary to make extremely basic points about Bayesian analysis to their climate scientist colleagues who presumably only learned a bit about Frequentist analysis in graduate school, despite the fact that nothing is randomized in the atmosphere and the Frequentist approach could not be any less applicable. Perhaps worse, the Intergovernment Panel on Climate Change (IPCC) cannot seem to make up its mind as to whether it should use Frequentist or Bayesian language in describing the literature (that mostly misuses Frequentist estimation), as discussed in this recent [paper](https://journals.publishing.umich.edu/ergo/article/id/4637/) by Dethier.
