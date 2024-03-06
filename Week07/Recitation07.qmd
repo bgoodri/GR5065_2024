@@ -1,0 +1,154 @@
+---
+title: "Recitation for Week07"
+author: "Apoorva"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Introduction
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   Nowadays, we can use Markov Chain Monte Carlo (MCMC) to get $R$ *dependent* draws of $\boldsymbol{\theta} \mid \mathbf{y}$ without rejecting many
+-   Bayesians *can* use the same (log-)likelihood functions as Frequentists, which we will do for most of this semester
+-   The rstanarm package leverages conventional R syntax, but uses Stan to obtain posterior draws for regression models
+-   The posterior distribution --- or a function thereof --- is the answer to whatever question you are asking, but we can summarize (draws from) that distribution using plots, medians, standard deviations, etc.
+
+## County-Level [Data](https://acasignups.net/22/06/10/monthly-update-county-level-covid19-vaccination-levels-partisan-lean) from Charles Gaba
+
+```{r}
+#| message: false
+source("get_Gaba_data.R", echo = FALSE)
+str(Gaba, width = 75, strict.width = "cut")
+```
+
+The outcome variable here is `two_doses_percent`, which is the percentage of "fully" vaccinated adults against Covid-19 as of June 2022. The predictor is `Trump_percent` in 2020.
+
+## Notation for Generative Models
+
+::: columns
+::: {.column width="55%"}
+Math Notation\begin{eqnarray*}
+\forall n: y_n &\equiv& \eta_n + \epsilon_n \\
+\forall n: \epsilon_n &\thicksim& \mathcal{N}\left(0,\sigma\right) \\
+\forall n: \eta_n &\equiv& \alpha + \beta x_n \\
+\alpha &\equiv& \mu - \beta \overline{x} \\
+\mu &\thicksim& \mathcal{N}\left(m_{\mu}, s_{\mu}\right) \\
+\beta &\thicksim& \mathcal{N}\left(m_{\beta}, s_{\beta}\right) \\
+\sigma &\thicksim& \mathcal{E}\left(r\right)
+\end{eqnarray*}What would YOU choose for the prior constants in Gaba's model?
+:::
+
+::: {.column width="45%"}
+::: fragment
+R Code for Gaba Model
+
+```{r}
+R <- 10^3
+xbar <- 
+  mean(Gaba$Trump_percent)
+prior <- 
+  tibble(
+    sigma = rexp(R, .1),    
+    beta = rnorm(R, -.5, .2),
+    mu = rnorm(R, 50, 5),
+    alpha = mu - beta * xbar
+  )
+predictions <-
+  cross_join(Gaba, prior) |>  
+  transmute(
+    eta = alpha + beta *
+      Trump_percent,
+    epsilon = rnorm(
+      n(), 0, sigma),    
+    y = eta + epsilon)
+```
+:::
+:::
+:::
+
+## Check the Prior Predictions Logically
+
+```{r}
+#| message: false
+ggplot(predictions) + geom_density(aes(y)) + xlim(0, 100)
+```
+
+## Posterior Draws Summarized
+
+```{r}
+library(rstanarm) # type this chunk
+options(mc.cores = parallel::detectCores())         # usually faster
+post <- stan_glm(two_doses_percent ~ Trump_percent, 
+                 data = Gaba, family = gaussian,    # default family
+                 prior_intercept = normal(50, 5),   # on mu
+                 prior = normal(-0.5, 0.2),         # on beta
+                 prior_aux = exponential(0.1))      # on sigma
+```
+
+. . .
+
+```{r}
+print(post, digits = 2) # these describe the 4000 estimates
+```
+
+## Posterior Draws Plotted
+
+```{r}
+plot(post) # only for alpha is the CI width barely > the diameter
+```
+
+## The Value-Added of a Study
+
+```{r}
+posterior_vs_prior(post, pars = c("Trump_percent"), prob = 0.99)
+```
+
+## The `posterior_predict` Function
+
+```{r}
+NYS <- filter(Gaba, State == "New York")
+NYS_pred <- posterior_predict(post, newdata = NYS) # not actually new
+dim(NYS_pred)
+colnames(NYS_pred) <- NYS$County
+head(sort(colMeans(NYS_pred), decreasing = TRUE))
+filter(NYS, County == "New York (Manhattan)") |> 
+  select(two_doses_percent) # actual is close-ish to avg. prediction
+```
+
+## The `stan_lm` Function
+
+```{r}
+post <- stan_lm(two_doses_percent ~ Trump_percent + State,
+                data = Gaba, seed = 12345, # ^^^ -> 50 dummy variables
+                prior_intercept = normal(50, 5),
+                prior = R2(0.7, what = "median"))
+```
+
+```{r}
+print(post, digits = 2)
+```
+
+## Conclusion
+
+-   The `stan_glm` function uses the same syntax (see `?formula`) and likelihood (Gaussian by default) as `glm`
+
+-   Thus, `stan_glm` can easily include multiple predictors, interactions, and other non-linear functions of predictors
+
+-   `stan_glm` yields $R$ (by default 4000) posterior draws and you should use all of them for prediction and inference, rather than settling for just a mean or median
+
+-   `stan_lm` takes a prior on the intercept --- relative to centered predictors --- and a prior guess of the $R^2$ to imply a maximum entropy prior on the coefficients (and $\sigma$), which is useful when specifying priors individually is difficult
