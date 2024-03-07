@@ -1,0 +1,174 @@
+---
+title: "GR5065 Midterm Exam"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+        \usepackage{cancel}
+    keep-tex: true
+editor: visual
+execute: 
+  echo: true
+---
+
+-   You can use all of the course materials, readings, etc. to complete this exam. The only thing that is prohibited is communicating with other people (besides Ben) about the exam before everyone has finished (not all students are taking the exam at the same time).
+-   You have 1 hour and 50 minutes to upload your .qmd file to the Assignments section of Canvas. You can subsequently upload the .pdf file after it finishes rendering, but you might need to clear out of the classroom so that the next class can get in.
+-   It is not necessary to copy the text of the questions into your .qmd file; just use appropriate section headings and type your answers.
+-   You are not required to utilize \LaTeX  for any part of the exam; just type clearly.
+-   Each of the three main problems is weighted equally and each of the subproblems within each problem is weighted equally. Thus, you should try all of the subproblems so that you can at least receive partial credit.
+
+\newpage
+
+# Fire Extinguishers
+
+Suppose Columbia wants to test the (hand-held, red) fire extinguishers in a building to see if they are working correctly. One distinguishing feature of fire extinguishers is that in order to test it, you have to release all the chemicals inside it at high pressure, so even if that particular fire extinguisher was working correctly, it is useless going forward, and you have to buy another (expensive) fire extinguisher from a supplier.
+
+Let's say the Columbia building has $N = 20$ fire extinguishers scattered inside it. Let $X \in \{0, 1, 2, \dots, N\}$ be the *unknown* number of defective fire extinguishers in the building. Columbia randomly selects $n$ out of $N$ fire extinguishers for testing and finds that $k$ out of $n$ are defective, although $k$ could be zero.
+
+## Marginalization
+
+A reasonable prior distribution for the unknown integer $X$ is the beta-binomial distribution, which we have seen before because its Probability Mass Function (PMF) is the denominator of Bayes' Rule in the vaccine example.
+
+Let $\theta \in \left[0,1\right]$ be the unknown probability that a fire extinguisher Columbia buys from its supplier is defective. Columbia places a Beta prior with shapes $a > 0$ and $b > 0$ over $\theta$, which has a Probability Density Function (PDF) of$$f\left(\theta \mid a, b\right) = \frac{\theta^{a - 1} \left(1- \theta\right)^{b - 1}}{B\left(a,b\right)}$$ where $B\left(a,b\right)$ is the so-called Beta function and is implemented by `beta` in R.
+
+Let $X \mid \theta, N$ have a binomial distribution, which has a PMF of$$\Pr\left(x \mid, \theta, N\right) = {N\choose x}\theta^{x} \left(1 - \theta\right)^{N - x}$$Then, $\theta$ and $X$ have a joint probability distribution whose PDF is$$f\left(\theta \bigcap x \mid a,b, N\right) = f\left(\theta \mid a,b\right) \Pr\left(x \mid \theta, N\right) = \frac{\theta^{a - 1} \left(1- \theta\right)^{b - 1}}{B\left(a,b\right)} {N\choose x}\theta^{x} \left(1 - \theta\right)^{N - x}$$Consequently, the distribution of $X$ irrespective of $\theta$ but conditional on $a$, $b$,and $N$ has a PMF of$$\Pr\left(x \mid a, b, N\right) = f\left(\bcancel{\theta} \bigcap x \mid a,b, N\right) = \int\limits_0^1\frac{\theta^{a - 1} \left(1- \theta\right)^{b - 1}}{B\left(a,b\right)} {N\choose x}\theta^{x} \left(1 - \theta\right)^{N - x}d\theta = {N \choose x} \frac{B\left(a + x, b + N - x\right)}{B\left(a,b\right)}$$ The above PMF of the beta-binomial is conveniently implemented by the `dbbinom` function in the extraDistr R package, which you may have to install (once, outside of your .qmd file) from CRAN. Its arguments are called `x` (which corresponds to $x$), `size` (which corresponds to $N$ and should be $20$), `alpha` (which corresponds to $a$), and `beta` (which corresponds to $b$).
+
+-   Using the functions in the dplyr package, as well as functions that come with R, construct a tibble with $R =10^6$ rows and two columns: one that contains realizations of $\theta$ and another that contains realizations of $X$. You will have to choose plausible values of $a$ and $b$ to do so.
+
+-   Show that the proportion of realizations of each value of $X$ in your tibble is essentially the same as implied by the above PMF of the beta-binomial distribution.
+
+## Conditional Distribution of the Data
+
+When sampling uniformly *without* replacement from a finite set, the appropriate distribution to use is called the hypergeometric distribution, which has the PMF$$\Pr\left(k \mid N, n, x\right) = \frac{{x \choose k} {N - x \choose n - k}}{{N \choose n}}$$ where
+
+-   $N$ is the (known) number of fire extinguishers in the building
+
+-   $n$ is the (known) number of fire extinguishers randomly selected for testing, out of $N$
+
+-   $x$ is the (unknown) number of defective fire extinguishers in the building, out of $N$
+
+-   $k$ is the (observable) number of defective fire extinguishers in testing, out of $n$
+
+R comes with functions for the hypergeometric distribution, but they unfortunately use an equivalent but different parameterization of it. So, we are going to substitute our versions based on the above parameterization
+
+```{r}
+#| message: false
+dhyper <- function(k, N, n, x) { # PMF
+  stats::dhyper(k, x, N - x, n)
+}
+rhyper <- function(nn, N, n, x) { # nn is the number of draws to take
+  stats::rhyper(nn, x, N - x, n)
+}
+```
+
+-   Suppose $N = 20$ and $n = 3$. Add a third column to the tibble in the previous subproblem that contains realizations of $k$ from a hypergeometric distribution.
+
+## Posterior
+
+Suppose that when $n = 3$ fire extinguishers are randomly selected for testing, $k = 1$ of them are defective. Using the simulations from the previous subproblem, how would you describe your posterior probability distribution for the number of defective fire extinguishers *remaining* in the building (out of $N - n = 17$)?
+
+## Decision Theory
+
+As a result of this testing of $n = 3$ fire extinguishers and finding that $k = 1$ of them are defective, Columbia is considering switching from supplier A to supplier B, although it could test more of supplier A's fire extinguishers befoe making that decision. How would you advise Columbia as to how to go about making that decision? Exact calculations are not required.
+
+# Income Inequality
+
+Read this [article](https://www.theatlantic.com/ideas/archive/2024/02/one-percent-income-inequality-academic-feud/677564/?utm_source=copy-link&utm_medium=social&utm_campaign=share) by a journalist named Rogé Karma about a debate over income inequality in the United States principally between "Berkeley" economists (Piketty, Saez, and Zucman, although Piketty is not actually at the University of California Berkeley) and "government" economists (Auten and Splinter, although they do not speak for the government as a whole). It is *not* necessary for you to click on any of the links inside the article in order to write an essay that addresses, at least, the following topics:
+
+-   Karma starts by asking: "But what if this 'fact' \[that income inequality has risen dramatically in recent decades\] was never true?" Explain how this binary way of framing an issue --- where something is or is not true, as opposed to the degree to which someone believes it is true --- relates to our discussion in Week01. Also explain how it relates to the "fact" that mRNA vaccines were widely considered by scientists to not work, until the mRNA vaccine against covid-19 worked extremely well.
+
+-   Karma also says: "When I first heard about the new paper \[by Auten and Splinter\], I assumed it would convince me, at the very least, that inequality had risen less than I thought --- that the reality was somewhere between the two groups' estimates." Explain how this statement is fundamentally Bayesian, even though Karma does not use that word.
+
+-   Karma furthermore says: "Both teams base their estimates on the results of random IRS audits. The problem is that those audits are woefully limited, so the researchers must turn to studies by tax-evasion specialists who use fancy statistical techniques to account for the gaps in the audits." Assume it is true that whose tax returns get audited by the IRS (Internal Revenue Service) is randomized and also that is the only source of randomization in the data used by either the Berkeley economists or the government economists. What do you think Ronald Fisher would say about how this debate should be resolved, and is that recommendation adequate if "those audits are woefully limited"?
+
+-   As Karma explains, much of the dispute between the Berkeley economists and the government economists is attributable to the different ways in which they distribute spending on public goods and interest payments on government deficits. The Berkeley economists distribute such things in the same way as pre-tax income, while the government economists claim that public goods disproportionately benefit those with low pre-tax incomes while government deficits will disproportionately be paid for (in the future) by people with high pre-tax incomes. Both sides use Frequentist estimation techniques, but could you assume a prior for how public goods and interest payments are distributed over the population and update that prior as new data is collected? Explain how that would (or would not) work.
+
+-   Karma links to a paper by a Princeton economist who argues that inequality of *wealth* has risen sharply between 1989 and 2016 (which was the period for which the wealth data was readily available). From a Bayesian perspective, how does this finding influence your beliefs about whether there has been a similar increase in *income* inequality? Exact calculations are not required.
+
+-   Karma says that: "These sorts of technical disagreements over wonky minutiae are the sine qua non of any good academic dispute" where "sine qua non" is Latin for "the essence of". Explain how the debate between the Berkeley economists and the government economists is or is not representative of social science debates more generally and what, if any, role should Bayesian methods should play in resolving them.
+
+# Presidential Elections
+
+Since 1978, Ray Fair has been maintaining a linear regression model to predict popular vote in the United States. The latest version is at
+
+<https://fairmodel.econ.yale.edu/vote2020/indeane2.htm>
+
+You should glance at the first link there, and in particular, you will need the first column of Table 2. Although the webpages says that it presumes you have read Fair's 2007 paper, you do not actually need to do that in order to answer the following questions.
+
+Fair's data can be loaded into R via
+
+```{r}
+#| message: false
+#| warning: false
+library(dplyr)
+president <- readr::read_table("https://fairmodel.econ.yale.edu/vote2020/atbl1.txt",
+                               n_max = 37, na = "na", show_col_types = FALSE) |> 
+  filter(t >= 1916) |> 
+  arrange(desc(t))
+glimpse(president)
+```
+
+-   `t` is the year of the Presidential election $\left(t\right)$, which does not actually enter the model. In other words, the model is assumed to hold for all $t$.
+
+-   `VP` is the the outcome variable and is defined percentage of Presidential votes cast for the Democratic candidate, out of the total votes cast for the Democratic and Republican candidate $\left(V^P\right)$. Note that the denominator excludes third-party candidates.
+
+-   `VC` is not being used by us but is the percentage of votes cast for Democratic candidates running for House seats, out of the total votes cast for the Democratic and Republican candidates $\left(V^C\right)$
+
+-   `I` is an integer that is coded as $1$ if the President up until the election is a Democrat and $-1$ if he is a Republican $\left(I\right)$
+
+-   `DPER` differs from `I` in that it is coded as $1$ if a Democratic president is running for reelection and $-1$ if a Republican president is running for reelection. Thus, `DPER` is coded as $0$ if the current president is not running for reelection $\left(DPER\right)$
+
+-   `DUR` is coded as $0$ if the President's party differs from that of his predecessor and then $\frac{1}{4}$ is added (for Democrats) or subtracted (for Republicans) for each additional four-year term that the same party has held the White House $\left(DUR\right)$
+
+-   `WAR` is a dummy variable that is equal to $1$ only during World War I and II $\left(WAR\right)$
+
+-   `G` is the growth rate in real per-capita income during the first three quarters of the year in which the election is held in November $\left(G\right)$. This is expressed as an annual rate.
+
+-   `P` is the growth rate in the deflator that converts nominal GDP to real GDP over the $15$ quarters leading up to the presidential election and thus is a measure of inflation. `P` is coded as zero in a few years where there was deflation. $\left(P\right)$. This is also expressed at an annual rate.
+
+-   `Z` is a count of the number of quarters where $G$ exceeds its average value of $3.2$, over the $15$ quarters leading up to the presidential election
+
+Note that `G` and `Z` refer to real growth in per-capita income, but since the population changes slowly, that is essentially the same as the real growth in total income.
+
+## Priors
+
+In column 1 of Table 2, Fair uses Ordinary Least Squares (OLS) to produce point estimates of the coefficients (and a constant) in a linear regression where `VP` is the outcome variable. The `I` variable appears on its own as a predictor and is also interacted with each of `G`, `P`, and `Z`, which can be achieved in R using the colon operator (i.e. `… I + G:I + P:I + Z:I + …` see `?formula` if you are confused about how to do this). Also, `DPER`, `DUR`, and `WAR` are included as predictors. You can use either `stan_glm` or `stan_lm` in the subsequent problem. If you use `stan_glm`, note that R will place the interaction terms at the end, even though the other predictors will appear in the order that you list them in your formula.
+
+-   Regardless of whether you use `stan_glm` or `stan_lm`, explain here *why* you chose the prior distributions that you did. Note that it is not good to refer to Ray's results when formulating your prior beliefs because in that case, your beliefs would not be prior to observing the data.
+
+## Posterior
+
+Use either `stan_glm` or `stan_lm` along with the priors that you specified in the previous subproblem to estimate using MCMC the parameters of Fair's model in the first column of Table 2. Explain how your posterior medians differ quantitatively from the OLS point estimates obtained by Fair and then explain qualitatively why they differ.
+
+## Past Predictions
+
+Use the `posterior_predict` function with `newdata = NULL` to obtain $4000$ predictions for each of the $27$ previous presidential elections since 1916. There will be one column for each of the $27$ elections. Are there any past presidential elections for which the model is predicting that the Democratic candidate will obtain a vote percentage outside the $\left[0,100\right]$ interval? What does this imply about the admissibility of your posterior distribution?
+
+## Counterfactual Predictions
+
+Suppose that there had been no outbreak of covid-19 during $2020$ and consequently `G` during the first three quarters of $2020$ was more like $2$ percent, rather than the estimated $-3.51$ percent that transpired due to lockdowns. This scenario can be represented by
+
+```{r}
+counterfactual <- filter(president, t == 2020) |> 
+  mutate(G = 2)
+```
+
+Call the `posterior_predict` function with `newdata = counterfactual` to predict the popular vote if there were no covid-19 outbreak. What is the probability under your model that Trump would have won at least 49% of the popular vote and thereby presumably would have remained President by winning the Electoral College votes?
+
+## Future Predictions
+
+In the last section, Fair predicts the popular vote for the 2024 presidential election. We know that $I = 1$ (because a Democrat is president now) and $DUR = 0$ (because a Republican was president in the previous term). By all indications, Joe Biden will run for re-election, in which case $DPER = 1$. Although anything could happen, let's assume (like Fair does) that the United States will not be drawn into a major war (akin to World War I or II; the skirmishes off the coast of Yemen, for example, do not count as a major war) in $2024$.
+
+However, the ultimate values of the economic variables --- `G`, `P`, and `Z` --- are not currently known. As of November 2022, Fair assumed that $G = 1.70$, $P = 4.83$, and $Z = 3$. Today, it seems clear that $G$ will be a bit higher than $1.70$, $P$ has been (in 2023) and will be (in 2024) lower than $4.83$, and $Z$ could be $4$ or $5$ (depending on how the data for the fourth quarter of $2023$ are revised).
+
+-   Create a tibble with $1000$ rows and seven columns that are intended to be applicable to the 2024 presidential election. Four of the columns are fixed: `I` is always $1$, `DUR` is always $0$, `DPER` is always $1$, `WAR` is always $0$. `Z` is a "coin-flip", i.e. $4$ with probability $\frac{1}{2}$ and is `5` with probability $\frac{1}{2}$, `G` and `P` are realizations of random variables that are drawn from a distribution of your choosing, but you can use the Internet to select something plausible.
+
+-   Use the `posterior_predict` function with `newdata` equal to the aforementioned tibble to produce a $4000 \times 1000$ matrix of predictions for `VP` in 2024. Use the `c()` function to coerce this matrix into a vector of size $4$ million and use the `geom_density` function to plot them. How would you describe this distribution?
+
+## Comparison
+
+On Fair's [website](https://fairmodel.econ.yale.edu/vote2020/computv3.htm), you can input values of `G`, `P`, and `Z` to obtain a point prediction for the 2024 election. Do so using the medians of `G`, `P`, and `Z` that you used in the previous subproblem. What are the important differences between the way in which you obtained predictions in the previous subproblem as compared to Fair's website? Why do these differences arise?
