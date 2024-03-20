@@ -1,0 +1,190 @@
+---
+title: "GR5065 Midterm Exam Answer Key"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+        \usepackage{cancel}
+    keep-tex: true
+editor: visual
+execute: 
+  echo: true
+---
+
+# Fire Extinguishers
+
+This question is essentially in the same form as a bowling problem, in the sense that you have a discrete sample space of finite size. Thus, when sampling without replacement, the conditional probabilities change because the sample space gets smaller. But it is most like bowling with an unknown but discrete (in)ability parameter, in the sense that we have an unknown number of defective fire extinguishers in the building.
+
+## Marginalization
+
+You could choose various positive values for $a$ and $b$ in the beta-binomial prior for $X$ but $b$ should be much larger than $a$ in order to imply that the prior probability of a defective fire extinguisher is rather small. Recall that the expectation of a beta random variable is $\frac{a}{a + b}$. Fire extinguishers are not terribly complicated, and it would be difficult to stay in business as a fire extinguisher supplier if your company had a reputation for selling defective fire extinguishers. So, no one thinks it is likely that a fire extinguisher is defective, but no one should be sure of that either.
+
+```{r}
+#| message: false
+library(dplyr)
+a <- 1
+b <- 19 # implies the expectation of theta is 1 / 20
+fire_extinguishers <-
+  tibble(theta = rbeta(10^6, shape1 = a, shape2 = b),
+         X = rbinom(10^6, size = 20, prob = theta))
+
+count(fire_extinguishers, X) |> 
+  mutate(prop = n / 10^6,
+         prob = extraDistr::dbbinom(X, size = 20, alpha = a, beta = b))
+```
+
+The `prop` and `prob` columns are very similar, as they were when we did bowling problems.
+
+This question tests your understanding of marginalizing over $\theta$. In this rare situation, the integral can be done analytically, albeit not in an elementary fashion because the $B$ function is an infinite product. However, it is just as effective to marginalizing over $\theta$ using simulations, which is how Bayesians marginalize over any unknown these days.
+
+## Conditional Distribution of the Data
+
+```{r}
+dhyper <- function(k, N, n, x) { # PMF
+  stats::dhyper(k, x, N - x, n)
+}
+rhyper <- function(nn, N, n, x) { # nn is the number of draws to take
+  stats::rhyper(nn, x, N - x, n)
+}
+
+fire_extinguishers <- mutate(fire_extinguishers,
+                             k = rhyper(10^6, N = 20, n = 3, x = X))
+```
+
+This should also be straightforward and tests your understanding of drawing from a conditional distribution of the observable data given $X = x$.
+
+## Posterior
+
+We can condition on the event that $k = 1$ in order to obtain a subset of the original draws that are consistent with the observed data, thereby making them posterior draws.
+
+```{r}
+filter(fire_extinguishers, k == 1) |> 
+  count(X) |> 
+  mutate(prop = n / sum(n),
+         X = X - 1,
+         prob = extraDistr::dbbinom(X, size = 17, a + 1, b + 3 - 1))
+```
+
+Although it was not necessary in this problem, it so happens that the beta-binomial distribution is conjugate with the hypergeometric likelihood, as explained in this 2019 [article](https://www.mdpi.com/2071-1050/10/10/3671) by Jeon and Ahn. In short, the posterior distribution of the number of defective fire extinguishers *remaining* in the building is beta-binomial with $N^\ast = N - n$, $a^\ast = a + k$, and $b^\ast = b + n - k$, whose probabilities are given in the `prob` column above and are essentially the same as the simulated `prop`ortions.
+
+## Decision Theory
+
+The steps of decision theory are as follows. First, you enumerate the possible decisions, which in this case are stay with supplier A, switch to supplier B, or possibly test more of supplier A's fire extinguishers before deciding whether to switch. Second, you have to specify a (dis)utility function. The cost of having a defective fire extinguisher is in the millions if there were a fire, which is unlikely. The cost of buying new fire extinguishers is perhaps \$100 each. Third, you have to evaluate the *expected* (dis)utility of each choice using posterior distribution for the number of defective fire extinguishers as the weight on the cost of having defective fire extinguishers. Since the cost of having a defective fire extinguisher is so high, even a small difference in the probability of a defect would be sufficient to go with the more reliable fire extinguisher supplier.
+
+In this situation, we do not know anything about supplier B's fire extinguishers, so we could either use our prior or research their reliability or perhaps buy a few of them to test ourselves. But since the posterior probability is high that some of supplier A's fire extinguishers are defective, it would seem difficult to make the decision to continue with them without any further testing.
+
+# Income Inequality
+
+The issue of income inequality --- both in the United States and other countries --- is important in many aspects of social science. Piketty, Saez, and Zucman have each become famous largely because of their research on income (and wealth) inequality, which has found that within-country inequality has increased especially in recent decades. Thus, Auten and Splinter's research is potentially important since it claims to largely undermine the Berkeley economists' central finding.
+
+The structure of this debate is a bit like that over the usefulness of mRNA vaccines, which were widely considered to be useless through 2019 but have been very useful for covid-19 and their applicability to other viruses is now being reexamined. However, it is a dangerous shorthand to frame an answer to a question as either true or false. We could accept that mRNA vaccines had not worked through 2019, but experiments were showing some progress and it was possible that they would become viable in the future. That future seemed to arrive in 2020, but the mRNA vaccines that BioNTech / Pfizer and Moderna developed were only about 90% effective against the 2020 variant of covid-19 and the effectiveness wore off after a few months, necessitating booster shots and new formulas to be similarly effective against mutated variants. That accomplishment was worthy of a Nobel Prize, but it does not imply that it is impossible for a vaccinated person to get covid.
+
+Still, whether someone is or is not infected with a disease is a fairly binary question, whereas the extent to which income inequality has risen in recent decades is squarely a question of degree. Thus, it is too simplistic for Karma to ask whether this fact "was never true" or people to say that the Berkeley economists' research has been overturned by the government economists' paper. However, in the Frequentist framework, propositions can *only* be true or false, even if researchers do not know which. Thus, the Frequentist framework is not well-suited for this question (or many similar questions in the social sciences), even though many researchers use a version of the Frequentist framework anyway when they ask questions like can we reject the null hypothesis that income inequality in 2023 is the same as it was in 1923?
+
+Karma's framing is better when he says "When I first heard about the new paper \[by Auten and Splinter\], I assumed it would convince me, at the very least, that inequality had risen less than I thought --- that the reality was somewhere between the two groups' estimates." This sounds consistent with the Bayesian framework where the Berkeley economists' research takes the role of the "prior" and Karma intends to update his beliefs by conditioning on the "data" that the government economists provide. When there is only one unknown, the posterior expectation is between the prior expectation and average in the data. The analogy does not quite work perfectly because the government economists are largely using the same data as the Berkeley economists, but with different assumptions. Nevertheless, it is entirely conventional --- and even cliche --- for journalists to presume that if there are two sides to a debate that the truth lies somewhere in between, which is fundamentally a Bayesian way of thinking.
+
+Fisher opposed the Bayesian way of thinking, at least in science. We have already seen that Fisher's way of thinking would imply an easily-beatable poker strategy, would have rejected emergency-use authorization for mRNA covid vaccines in late 2020, and would make it impossible for scientists to say anything useful about global warming. The core issue is that Fisher insisted that probability was only applicable to random variables, in which case the (Frequentist) definition of probability is the proportion of times that something happens in the limit as the number of randomizations approaches infinity. Beliefs about what hole cards another poker player has, or whether a vaccinated person will get covid, or if the average global temperature will be two degrees higher in the future than in the past are not random variables in Fisher's framework and neither are beliefs about changes in the income distribution.
+
+The only thing that is properly a random variable in this context is who is audited by the IRS and so is any function of the audit, such as how much income the person originally did not report. However, if the IRS only randomly audits 1000 people, we would only expect 10 of them to be in the top 1% of the income distribution. The Berkeley economists' research actually blames the bulk of the increase in income inequality on the top 0.001% or so. Thus, woefully limited audits --- even if they are randomized --- would not include nearly enough ultra-rich people to conclusively determine whether the Berkeley economists are right. Perhaps a future Congress could provide the IRS with funding to do more random audits, but failing that, Fisher would presumably say that if you cannot say something "objective" about random variables, then scientists should not say anything "subjective" about them. That is consistent with what Fisher actually did say about the hypothesis that smoking caused long cancer, which scientists suspected even before Fisher died of lung cancer but could not objectively prove with experiments on humans (which would have been unethical because if the hypothesis were true, then such an experiment would kill people). In short, Fisher's view had the effect of (and likely the intention to) exclude discourse and if taken literally, would exclude most of the discourse in what came to be social science. Thus, it is curious that almost all practicing social scientists today exclusively use Frequentist techniques that were largely developed by someone who would say that social science is an oxymoron.
+
+The dispute between the Berkeley economists and the government economists is representative of many contemporary disputes in the social sciences and bears no resemblance to the agricultural experiments that motivated Fisher's statistical developments. The government economists' claim that public spending disproportionally benefits the bottom 99% of the income distribution --- and should be counted as part of their "income" --- while tax revenue is disproportionally collected from the top 1%. Thus, the government economists reach the conclusion that post-tax income inequality has risen only a little bit in recent decades, while the Berkeley economists make different assumptions and come to a much starker conclusion. In principle, you might think that how public spending and tax collection is allocated is a probability distribution about which people could have different priors, but how would you update that using Bayes' Rule? We already know how much is spent and how much is taxed (at least in the present), but the authors are making different assumptions about how it affects the income distribution. Future data does not change assumptions, although it is possible that the future will support or oppose (to some degree) the government economists' hypothesis that the current 1% will largely pay future interest on present debt that was borrowed to pay for past public spending.
+
+The main point is that neither the Berkeley nor the government economists are being "objective", nor could they ever be. Thus, we would seem to face a choice in the social sciences of either saying nothing or using the subjective view of probability that is associated with Bayesian estimation methods. However, practicing social scientists have largely chosen to use subjective view of probability with Frequentist estimation methods, which seems impossible to reconcile.
+
+Bayesians would say that we need additional data to condition on, such as wealth data, which is largely derived from property and estate taxes, rather than income taxes. Since a person's wealth at any point in time is the accumulation of past income (minus the accumulation of past debt), the sharp increase in wealth inequality found by the Princeton economist should make it more likely that income inequality has risen sharply in recent decades and make it less likely that the government economists are right. Fundamentally, subjective beliefs are updated using Bayes' Rule by taking away the part of the prior distribution that is inconsistent with the new data and then renormalizing what is left so that it sums (or integrates) to $1$.
+
+In conclusion, the Bayesian way of thinking about subjective probability and the associated way of estimation is much more suitable in this context than the corresponding Frequentist way of thinking in terms of everything being either true or false. Randomization has always been a part of social science research, but there are a lot of things that we cannot randomize or do not randomize enough (like IRS audits). While repeated randomization is necessary for the Frequentist interpretation of probability and motivates the use of Maximum Likelihood Estimation and hull hypothesis significance testing, randomization is not incompatible with Bayesian inference because Bayesians condition on the observed data, whether the observed data was randomized or not. However, Bayesians utilize the machinery of probability to describe anything that is unknown, regardless of whether our ignorance of it is due to the fact that it will be randomized by the researcher. In situations like the debate over the magnitude in the rise in income inequality or the magnitude of the future rise in global temperature, essentially nothing is randomized but we are nonetheless quite uncertain about it. Thus, you can either use Bayesian tools to manage your beliefs about these things and use decision theory to make policy around them or you can misuse Frequentist tools.
+
+# Presidential Elections
+
+```{r}
+#| warning: false
+president <- readr::read_table("https://fairmodel.econ.yale.edu/vote2020/atbl1.txt",
+                               n_max = 37, na = "na", show_col_types = FALSE) |> 
+  filter(t >= 1916) |> 
+  arrange(desc(t))
+```
+
+## Priors
+
+If I were to use `stan_glm`, then I would use priors in the normal family for both the intercept (relative to centered predictors) and the coefficients on the predictors and would use an exponential prior for the standard deviation of the errors. Both the normal distribution and the exponential distribution are maximum entropy distributions over $\mathbb{R}$ and $\mathbb{R}_+$ respectively, meaning that they convey the least information beyond what they condition on.
+
+I would use a prior expectation of $50$ for the intercept because most theoretical models predict that in two-party elections, the candidates' positions will both converge to that of the median voter. In addition, I would use a prior standard deviation of $2$ for the intercept so that almost all of the probability is between $45$ and $55$.
+
+For the coefficients, it is usually thought that incumbents have a slight advantage so the coefficients on $I$ and $DPER$ should be somewhat positive in expectation. During World War I and II, I would anticipate that many voters would support the current president, regardless of what they thought of his domestic policy agenda. Since Woodrow Wilson and Franklin Roosevelt were both Democrats and were president for most of the years where $WAR = 1$, I would chose a positive prior expectation for its coefficient. Most of the political science literature contends that the longer one party holds the office of President, the more likely they are to lose the next election, so the coefficient on $DUR$ should be negative in expectation. The coefficients on $G$ and $Z$ should be quite positive in expectation, on the theory that most voters are primarily concerned with the country's economic performance most of the time. Conversely, since $P$ is a measure of inflation, its coefficient should be negative in expectation. In all of these cases, you could choose a prior standard deviation that was larger or smaller depending on how much credence you put in the above theory. As a side note, it is ironic that in economics and some other parts of social science, regressions are harshly criticized unless there is some theory to motivate which predictors are included, but actually using that theory in the form of prior distributions is also harshly criticized because it is subjective.
+
+Since Fair seems to have most of the major predictors that political scientists usually use when modeling the percentage of the vote that a candidate for president should get, the question becomes how linear do you think these relationships are? Even if a data-generating process is not linear, it is often approximately linear near the center of the distribution. Thus, I would be prepared to think that the expectation of the standard deviation of the errors is $2$, which would correspond to an exponential prior with a rate of $\frac{1}{2}$.
+
+Below I actually use `stan_lm` , which takes a prior on the intercept and a Beta prior on the $R^2$ with first shape parameter equal to $\frac{K}{2}$, where $K$ is the number of predictors. The second shape parameter can be derived from what you think the $R^2$ will be, or more specifically what the median of your prior beliefs about the $R^2$ is. The $R^2$ can be expressed as $1$ minus the ratio of the error variance to the variance of the outcome. An exponential distribution with a rate of $\frac{1}{2}$ has a variance of $4$. If the variance of the outcome were $16$, then the $R^2$ would be $1 - \frac{4}{16} = \frac{3}{4}$, which seems reasonable.
+
+## Posterior
+
+```{r}
+#| message: false
+#| warning: false
+library(rstanarm)
+options(mc.cores = parallel::detectCores())
+post <- stan_lm(VP ~ G : I + P : I + Z : I + DPER + DUR + I + WAR, 
+                data = president, 
+                prior_intercept = normal(50, 2), 
+                prior = R2(0.75, what = "median"))
+
+print(post, digits = 2)
+```
+
+In general, the posterior medians are similar to the OLS estimates that Fair obtained. However, the posterior medians for the coefficients are consistently a bit closer to zero than Fair's OLS estimates due to the Beta prior distribution on the $R^2$, which implies a prior expectation of zero for each of the coefficients. That is also why the posterior median of the $R^2$ is a bit less than what Fair got, although it is slightly higher than the prior median. Since the posterior medians of the coefficients are a bit smaller in magnitude, the posterior median of the intercept (relative to the raw predictors) is slightly larger than Fair's estimated intercept.
+
+## Past Predictions
+
+```{r}
+posterior_predict(post, newdata = NULL) |> 
+  range()
+```
+
+All of the posterior predictions are well within the $\left[0,100\right]$ interval, which is a necessary condition for this model to be substantively reasonable. It is not a sufficient condition, but the posterior medians are mostly consistent with the above theory and when they are not consistent (i.e. for the coefficient on `I`) the posterior standard deviation is relatively large. Always remember that the Bayesian perspective on priors is that the researcher should be required to state in advance what (distribution of) parameter values would render a mathematical model --- that is admissible for all real values of the parameters --- substantively useful, and if I were to choose less informative priors I could easily get a model that is not substantively useful because it sometimes predicts impossible values for the outcome.
+
+## Counterfactual Predictions
+
+```{r}
+counterfactual <- filter(president, t == 2020) |> 
+  mutate(G = 2)
+mean(posterior_predict(post, newdata = counterfactual) < 51)
+```
+
+Under Fair's model and our counterfactual assumptions about `G` had there been no covid-19 outbreak in 2020, there is about a $0.94$ probability that a Democratic challenger (Biden) would have won less than 51% of the popular vote against the Republican incumbent (Trump). Since Trump won the Electoral College in 2016 against Hillary Clinton despite winning only 48.8% of the popular vote, it is quite likely but not guaranteed that Trump would have won the Electoral College in 2020 against Joe Biden in this scenario. However, your beliefs about whether Trump would have won the Electoral College in 2020 in the absence of the covid-19 outbreak should be fairly sensitive to your beliefs about what the growth rate in per capita income $\left(G\right)$ would have been in 2020 if there had been no covid-19 outbreak.
+
+## Future Predictions
+
+```{r}
+#| message: false
+library(ggplot2)
+election_2024 <- tibble(I = 1,
+                        DUR = 0, 
+                        DPER = 1, 
+                        WAR = 0, 
+                        G = rnorm(1000, mean = 1.90, sd = 0.2),                        
+                        Z = sample(4:5, size = 1000, replace = TRUE, prob = c(0.5, 0.5)),
+                        P = rnorm(1000, mean = 4.75, sd = 0.2))
+
+predictions_2024 <- posterior_predict(post, newdata = election_2024)
+ggplot() +
+  geom_density(aes(x = c(predictions_2024))) +
+  labs(title = "Posterior Predictions for the 2024 Popular Vote",
+       xlab = "Two-Party Percentage for Biden")
+```
+
+Under the posterior distribution for the parameters in Fair's model and our assumed distributions for `G`, `Z`, and `P`, the most likely result is for Biden to win slightly more votes than Trump in percentage terms, which would be similar to what happened in the $2020$ election. However, the uncertainty in these predictions is rather large in the sense that there is a non-negligible chance that Biden could receive less than 45% of the vote or more than 58%, and there is about an even chance that Biden receives no more than a bare majority of the popular vote, in which case he would more likely lose the Electoral College in 2024 than win it.
+
+## Comparison
+
+If we plug the medians of `G`, `P`, and `Z` into Fair's [website](https://fairmodel.econ.yale.edu/vote2020/computv3.htm), we obtain a point prediction for Bidens percentage of 51.41, which is not too different from the mode of the predictive distribution that we obtained in the previous subproblem. However, there are important differences between a posterior predictive *distribution* and a *point* prediction from OLS estimates, which can be seen as the expectation of the predictions given that $\alpha = \widehat{\alpha}$ and $\beta_k = \widehat{\beta}_k \forall k$.
+
+A posterior predictive distribution propagates the uncertainty in the intercept, the coefficients, and the standard deviation of the errors forward into the uncertainty in the predictions. As there have only been $27$ presidential elections since 1916, the parameter uncertainty is not negligible, which even Fair alludes to when he admits "Not all coefficient estimates are significant at conventional levels, but this may reflect in part the small sample size" (even though his data is not a sample in the first place and the Frequentist interpretation of probability is not applicable). However, the point prediction produced by Fair's website, in effect, assumes that the OLS estimates are true and evaluates the implications of that. Moreover, the predictive distribution in the previous subproblem also incorporated our uncertainty about what `G`, `Z`, and `P` will turn out to be once the presidential election happens in November. Technically, you could type in 1000 different values of `G`, `Z`, and `P` into Fair's website that you drew from their probability distributions, but the resulting distribution would still use the OLS estimates as if they were the truth and thus would have less dispersion that what we saw in the previous subproblem. Finally, this posterior predictive distribution adds to the posterior expectations four million draws of $\epsilon$ from a normal distribution with expectation zero and standard deviations equal to the four thousand posterior draws of $\sigma$. OLS predictions ignore $\epsilon$ and thus would be more analogous to posterior predictions if the posterior distribution for $\sigma$ were concentrated near zero, which it is not in this case.
+
+Thus, for a variety of reasons, Fair's entirely conventional way of doing things completely misses what is arguably the most important characteristic of predicting the 2024 presidential election: We are highly uncertain about who will win. Compared to an "uniformative" uniform distribution over $\left[0,100\right]$, we are fairly certain that Biden will get between 45 and 55 percent, but that degree of certainty does not help much when predicting a two-party election, particularly one that is ultimately decided by the Electoral College. Even our Bayesian approach understates our uncertainty about the 2024 election because the model assumed that all 27 elections since 1916 are comparable to 2024, that all the relationships are linear, etc. In addition, there is a non-negligible chance that either candidate could die before the 2024 election, which is not being considered in the predictions. Nor does the model consider that Trump may (or may not) stand trial for various felonies before the election takes place, which is unprecedented for a major-party candidate for president.
+
+In short, the Frequentist answer that Fair gives --- and that many social scientists give in other social science contexts --- does not answer the questions that social scientists (and other people) ask. At best, Frequentist results answer a backwards question and are much less rich than the answers that Bayesian methods provide.
