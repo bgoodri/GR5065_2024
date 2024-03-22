@@ -1,0 +1,126 @@
+President,Term,House,Senate,Total,Regular,Pocket,Overrides
+George Washington,1,56.99999999999999,69,0,0,0,0
+George Washington,2,56.99999999999999,53,1,1,0,0
+George Washington,3,48,53,0,0,0,0
+George Washington,4,44,66,1,1,0,0
+John Adams,5,54,69,0,0,0,0
+John Adams,6,56.99999999999999,69,0,0,0,0
+Thomas Jefferson,7,64,50,0,0,0,0
+Thomas Jefferson,8,73,74,0,0,0,0
+Thomas Jefferson,9,80,79,0,0,0,0
+Thomas Jefferson,10,82,82,0,0,0,0
+James Madison,11,65,79,2,2,0,0
+James Madison,12,75,83,2,1,1,0
+James Madison,13,63,78,1,1,0,0
+James Madison,14,65,68,2,1,1,0
+James Monroe,15,79,71,0,0,0,0
+James Monroe,16,86,80,0,0,0,0
+James Monroe,17,83,92,1,1,0,0
+James Monroe,18,30,65,0,0,0,0
+John Quincy Adams,19,51,46,0,0,0,0
+John Quincy Adams,20,47,44,0,0,0,0
+Andrew Jackson,21,64,52,4,2,2,0
+Andrew Jackson,22,59,50,4,1,3,0
+Andrew Jackson,23,60,42,2,1,1,0
+Andrew Jackson,24,59,50,2,1,1,0
+Martin van Buren,25,53,67,1,0,1,0
+Martin van Buren,26,52,57.99999999999999,0,0,0,0
+William Henry Harrison,27,59,56.00000000000001,0,0,0,0
+John Tyler,27,59,56.00000000000001,7,4,3,0
+John Tyler,28,32,56.00000000000001,3,2,1,1
+James K. Polk,29,62,59,3,2,1,0
+James K. Polk,30,48,63,0,0,0,0
+Zachary Taylor,31,46,40,0,0,0,0
+Millard Fillmore,31,46,40,0,0,0,0
+Millard Fillmore,32,37,37,0,0,0,0
+Franklin Pierce,33,67,61,4,4,0,0
+Franklin Pierce,34,36,63,5,5,0,5
+James Buchanan,35,56.00000000000001,62,4,1,3,0
+James Buchanan,36,35,57.99999999999999,3,3,0,0
+Abraham Lincoln,37,59,62,3,2,1,0
+Abraham Lincoln,38,47,64,4,0,4,0
+Abraham Lincoln,39,71,72,0,0,0,0
+Andrew Johnson,39,NA,NA,13,11,2,6
+Andrew Johnson,40,NA,NA,16,10,6,9
+Ulysses S. Grant,41,70,84,16,5,11,0
+Ulysses S. Grant,42,56.00000000000001,76,32,13,19,1
+Ulysses S. Grant,43,68,64,16,5,11,0
+Ulysses S. Grant,44,35,61,29,22,7,3
+Rutherford B. Hayes,45,46,53,4,3,1,1
+Rutherford B. Hayes,46,45,55.00000000000001,9,9,0,0
+James Garfield,47,52,49,0,0,0,0
+Chester Arthur,47,52,49,3,3,0,1
+Chester Arthur,48,36,50,9,1,8,0
+Grover Cleveland - I,49,56.00000000000001,45,202,145,57,2
+Grover Cleveland - I,50,51,49,212,159,53,0
+Benjamin Harrison,51,54,57.99999999999999,36,15,21,0
+Benjamin Harrison,52,26,53,8,4,4,1
+Grover Cleveland - II,53,61,50,81,18,63,0
+Grover Cleveland - II,54,26,44,89,24,65,5
+William McKinley,55,57.99999999999999,49,7,2,5,0
+William McKinley,56,52,59,35,4,31,0
+Theodore Roosevelt,57,56.00000000000001,62,21,15,6,0
+Theodore Roosevelt,58,54,63,2,0,2,0
+Theodore Roosevelt,59,65,64,30,15,15,0
+Theodore Roosevelt,60,56.99999999999999,66,29,12,17,1
+William Howard Taft,61,56.00000000000001,65,13,8,5,0
+William Howard Taft,62,41,54,26,22,4,1
+Woodrow Wilson,63,67,53,4,4,0,0
+Woodrow Wilson,64,53,57.99999999999999,6,4,2,1
+Woodrow Wilson,65,49,56.00000000000001,6,5,1,0
+Woodrow Wilson,66,44,49,28,20,8,5
+Warren G. Harding,67,69,62,6,5,1,0
+Calvin Coolidge,68,52,55.00000000000001,7,3,4,1
+Calvin Coolidge,69,56.99999999999999,56.00000000000001,11,4,7,0
+Calvin Coolidge,70,55.00000000000001,50,32,13,19,3
+Herbert Hoover,71,62,57.99999999999999,19,11,8,2
+Herbert Hoover,72,50,50,18,10,8,1
+Franklin D. Roosevelt,73,72,61,73,19,54,1
+Franklin D. Roosevelt,74,74,72,148,84,64,1
+Franklin D. Roosevelt,75,77,79,117,33,84,3
+Franklin D. Roosevelt,76,60,72,167,126,41,2
+Franklin D. Roosevelt,77,61,69,82,79,3,0
+Franklin D. Roosevelt,78,51,59,46,29,17,2
+Franklin D. Roosevelt,79,56.00000000000001,59,2,2,0,0
+Harry S. Truman,79,56.00000000000001,59,74,54,20,0
+Harry S. Truman,80,43,47,75,42,33,6
+Harry S. Truman,81,61,56.00000000000001,79,70,9,3
+Harry S. Truman,82,50,51,22,14,8,3
+Dwight D. Eisenhower,83,51,50,52,21,31,0
+Dwight D. Eisenhower,84,47,49,34,12,22,0
+Dwight D. Eisenhower,85,46,49,51,18,22,0
+Dwight D. Eisenhower,86,35,35,44,22,22,2
+John F. Kennedy,87,61,64,20,11,9,0
+John F. Kennedy,88,60,66,1,1,0,0
+Lyndon B. Johnson,88,60,66,8,4,4,0
+Lyndon B. Johnson,89,68,68,14,10,4,0
+Lyndon B. Johnson,90,56.99999999999999,64,8,2,6,0
+Richard Nixon,91,44,43,11,8,3,3
+Richard Nixon,92,41,44,20,6,14,2
+Richard Nixon,93,44,42,12,12,0,2
+Gerald R. Ford,93,44,42,27,16,11,4
+Gerald R. Ford,94,33,38,39,32,7,8
+Jimmy Carter,95,67,61,19,6,13,0
+Jimmy Carter,96,64,57.99999999999999,12,7,5,2
+Ronald Reagan,97,44,53,15,9,6,2
+Ronald Reagan,98,38,54,24,9,15,2
+Ronald Reagan,99,42,53,20,13,7,2
+Ronald Reagan,100,41,45,19,8,11,3
+George Bush,101,40,45,20,15,4,0
+George Bush,102,38,44,24,14,11,1
+William J. Clinton,103,59,56.99999999999999,0,0,0,0
+William J. Clinton,104,47,48,17,17,0,1
+William J. Clinton,105,47,45,8,8,0,1
+William J. Clinton,106,49,45,12,11,1,0
+George W. Bush,107,51,50,0,0,0,0
+George W. Bush,108,53,51,0,0,0,0
+George W. Bush,109,53,55.00000000000001,1,1,0,0
+George W. Bush,110,46,49,11,11,0,4
+Barack Obama,111,59,60,2,2,0,0
+Barack Obama,112,44,53,0,0,0,0
+Barack Obama,113,46,55.00000000000001,0,0,0,0
+Barack Obama,114,43,46,10,10,0,1
+Donald J. Trump,115,55.00000000000001,52,0,0,0,0
+Donald J. Trump,116,46,53,10,10,0,1
+Joseph R. Biden,117,51,50,0,0,0,0
+Joseph R. Biden,118,49,51,10,10,0,0

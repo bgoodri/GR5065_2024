@@ -1,0 +1,84 @@
+---
+title: "GR5065 HW4"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \pagenumbering{gobble}
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+    keep-tex: true
+editor: visual
+execute: 
+  echo: true
+---
+
+Load the data on Presidential vetoes of bills passed by the U.S. Congress by calling
+
+```{r}
+vetoes <- readr::read_csv("vetoes.csv", show_col_types = FALSE)
+```
+
+These data were assembled at
+
+<https://www.presidency.ucsb.edu/statistics/data/presidential-vetoes>
+
+which also has a brief explanation of the process and the variables. There are a bit more details at
+
+<https://en.wikipedia.org/wiki/List_of_United_States_presidential_vetoes>
+
+We are going to exclude the 39th and 40th session of Congress, which started with Abraham Lincoln as President and ended with Andrew Johnson as President after Lincoln was assassinated. Lincoln and Johnson were from different parties, so it is considerably more straightforward to exclude them.
+
+```{r}
+#| message: false
+library(dplyr)
+vetoes <- filter(vetoes, Term < 39 | Term > 40)
+```
+
+With few exceptions, the party with the majority of the seats in either House of Representatives or the Senate gets to decide which bills get voted on. If the same bill receives a majority of votes cast separately in both the House and the Senate, then the President has an opportunity to sign it or veto it within $10$ days. If the bill is vetoed, the House and the Senate have the opportunity to override a Presidential veto, but it requires another vote and two-thirds of the votes need to be in favor of the bill in both the House and the Senate separately to make it a law.
+
+In addition, if the bill passes Congress with fewer than $10$ days in the legislative session, then the President can essentially do nothing, which is called a "pocket veto". Congress cannot override a pocket veto because the legislative session ends, but it can start the bill approval process from scratch in a subsequent legislative session.
+
+Legislative sessions index two-year terms, after which there are elections for all of the seats in the House of Representatives and about one-third of the seats in the Senate. Joe Biden has vetoed ten bills so far, all of which have come since the midterm elections in 2022. In short, the number of bills that a President vetoes and the number of those that are overridden by Congress depends heavily --- and perhaps nonlinearly --- on the composition of seats held by members of the President's party in both the House and the Senate.
+
+# Literature
+
+Read one academic journal article that largely concerns Presidential vetoes in the United States. Provide a citation to the article that you read and explain your answers to the subquestions below.
+
+-   Does the article use quantitative methods?
+
+-   Does the article explicitly or implicitly take a Bayesian perspective?
+
+-   Does the article explicitly or implicitly conceive of the data as a "sample", even though we have the data on every Presidential veto so far and nothing about them is randomized?
+
+# Generative Model
+
+Use some subset, interaction, and / or transformation of the variables in `vetoes` to create a single generative model that produces prior predictions for both the number of regular (not pocket) vetoes in a two-year Congressional session and the number of overrides of regular vetoes.
+
+The number of regular vetoes in Congressional term $n$ should be drawn from a Poisson distribution with expectation $\mu_n \epsilon_n$, where $\epsilon_n$ is drawn from a Gamma distribution with shape and rate $\phi$ and $\mu_n = e^{\eta_n}$, where $\eta_n$ is a linear predictor.
+
+The number of overrides should be drawn from a binomial distribution with size equal to the number of regular vetoes and success probability $\pi_n = \frac{1}{1 + e^{-\lambda_n}}$, where the log-odds of an override, $\lambda_n$, is another linear predictor that need not be the same as $\eta_n$.
+
+-   You will have to choose priors for all of the unknown parameters in your model that go into the two linear predictors (as well as $\phi$), so you should explain why you chose those
+
+-   Draw $R = 10000$ times from this generative model using functions from dplyr and other R functions
+
+-   Use the ggplot2 package to produce plots showing that the distribution of predicted number of regular vetoes and overrides are both reasonable
+
+# Posterior $\mid$ Regular Vetoes
+
+Use the `stan_glm.nb` function in the rstanarm package to draw from the posterior distribution of all of the parameters that are involved in the part of the previous generative model that pertain to the number of regular vetoes; i.e. `Regular` is the outcome.
+
+-   Plot the posterior distribution of the parameters in a useful fashion and interpret what you see
+
+-   Is the error variance --- which drives the overdispersion in the outcomes --- large or small?
+
+# Posterior Prediction
+
+Draw from the posterior predictive distribution of the number of bills that Biden would veto in the (current) 118th session of Congress if, hypothetically, the Democrats had a majority in the House of Representatives (actually they are a few seats short). Plot this distribution using `geom_bar` in ggplot2.
+
+# Posterior $\mid$ Overrides
+
+Use the `stan_glm` function in the rstanarm package to draw from the posterior distribution of all the parameters that are involved in the part of the previous generative model that pertain to the number of overrides; i.e. the outcome syntax is `cbind(Overrides, Regular - Overrides)`. How would you describe the posterior probability of the 110th Congress --- when George W. Bush was president in 2007 and 2008 but Democrats had a majority in both the House and the Senate --- overriding any bill that Bush vetoes?
