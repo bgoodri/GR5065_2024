@@ -1,0 +1,202 @@
+---
+title: "Recitation for Week09"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Introduction
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   Wells in many countries have water that is contaminated with arsenic, i.e. poison
+-   One study measured the arsenic level of each well, told the residents whether the well they were using is safe or unsafe, and then (a few years later) went back to see if people had switched to using a different well
+
+. . .
+
+-   How would you model the process that generated the binary (i.e. yes or no) outcome data on well switching?
+
+-   From a Bayesian perspective, we are just tweaking our previous generative models to produce discrete outcomes
+
+## Data on Well Switching
+
+```{r}
+library(dplyr)
+data("wells", package = "rstanarm")            # do this!
+wells <- mutate(wells, dist = dist / 100,      # better units
+                arsenic_dist = arsenic * dist) # interaction term
+x_bar <- select(wells, dist, starts_with("arsenic")) |> 
+  colMeans()
+as_tibble(wells) # we are not using assoc or educ today
+```
+
+```{r}
+#| eval: false
+help(wells, package = "rstanarm") # for more info on variables
+```
+
+## Binary Probit Generative Model
+
+::: columns
+::: {.column width="42%"}
+Math Notation $\begin{eqnarray*} \forall n: y_n & \equiv & y_n^\ast > 0 \\ \forall n: y_n^\ast & \equiv & \eta_n + \epsilon_n \\ \forall n: \epsilon_n & \thicksim & \mathcal{N}\left(0,1\right) \\ \forall n: \eta_n & \equiv & \alpha + \sum_{k = 1}^K \beta_k x_{nk} \\ \alpha & \equiv & \gamma - \sum_{k = 1}^K \beta_k \overline{x}_k \\ \gamma & \thicksim & \mathcal{N}\left(m_0, s_0\right) \\ \forall k: \beta_k & \thicksim & \mathcal{N}\left(m_k, s_k\right) \end{eqnarray*}$
+:::
+
+::: {.column width="58%"}
+::: fragment
+Change the Question Marks Now!
+
+```{r}
+#| eval: false
+# inverse CDF transformation
+m_0 <- qnorm(`?`) 
+s_0 <- `??`
+m <- 
+  c(dist = `???`, # if arsenic = 0
+    arsenic = `????`, # if dist = 0
+    arsenic_dist = `?????`)
+s <- `??????` # used for all betas
+R <- 1000
+prior <- 
+  tibble(gamma  = rnorm(R, m_0, s_0),
+         beta_1 = rnorm(R, m[1], s),
+         beta_2 = rnorm(R, m[2], s),
+         beta_3 = rnorm(R, m[3], s),
+         alpha  = gamma - beta_1 *
+           x_bar[1] - beta_2 * 
+           x_bar[2] - beta_3 *
+           x_bar[3])
+```
+
+How would you draw predictions?
+:::
+:::
+:::
+
+## Prior Predictive Distribution
+
+```{r, include = FALSE}
+m_0 <- qnorm(0.3)
+s_0 <- 0.4
+m <- c(-1 / 5, 1 / 3, 0)
+names(m) <- names(x_bar)
+s <- 0.25
+R <- 1000
+prior <- 
+  tibble(gamma  = rnorm(R, m_0, s_0),
+         beta_1 = rnorm(R, m[1], s),
+         beta_2 = rnorm(R, m[2], s),
+         beta_3 = rnorm(R, m[3], s),
+         alpha  = gamma - beta_1 *
+           x_bar[1] - beta_2 * 
+           x_bar[2] - beta_3 *
+           x_bar[3])
+```
+
+```{r}
+predictions <- cross_join(prior, wells) |> 
+  transmute(eta = alpha + beta_1 * dist +
+              beta_2 * arsenic + beta_3 * arsenic_dist,
+            epsilon = rnorm(n()),
+            y_star = eta + epsilon,
+            y = y_star > 0) |>  # these are the predictions in {0,1} 
+  ungroup()
+slice_head(predictions, n = 1)
+```
+
+. . .
+
+What do you anticipate this plot will look like for your generative model? What would be (un)reasonable?
+
+```{r}
+#| fig-show: hide
+library(ggplot2)
+ggplot(predictions) + # plot on next slide
+  geom_density(aes(x = pnorm(eta))) +
+  labs(x = "Probability of Switching",
+       y = "Density")
+```
+
+## Previous Plot (yours is $\bigcup$-shaped)
+
+```{r}
+#| echo: false
+ggplot(predictions) + 
+  geom_density(aes(x = pnorm(eta))) +
+  labs(x = "Probability of Switching",
+       y = "Density")  
+```
+
+## Posterior Distribution
+
+```{r}
+library(rstanarm)
+options(mc.cores = parallel::detectCores())
+```
+
+```{r, post}
+#| cache: true
+
+post <- stan_glm(switch ~ dist * arsenic, # includes main effects too
+                 data = wells,
+                 family = binomial(link = "probit"), # not gaussian
+                 prior_intercept = normal(m_0, s_0), # on gamma
+                 prior = normal(m, s))               # on betas
+
+as_tibble(post) # (Intercept) is alpha, not gamma
+```
+
+## Plot of Posterior Margins (in $\eta$ units)
+
+```{r}
+plot(post, plotfun = "areas") # (Intercept) is alpha, not gamma
+```
+
+## Posterior Probability of Switching
+
+```{r}
+library(tidyr)
+nd <- expand_grid(
+  dist = round(quantile(wells$dist, probs = c(0.25, 0.5, 0.75)), 2),  
+  arsenic = quantile(wells$arsenic, probs = c(0.25, 0.5, 0.75))) |>  
+  mutate(id = as.character(1:n())) # pivot_longer yields the same id
+nd
+mu <- posterior_epred(post, newdata = nd) # R x 9 probability matrix
+draws <- pivot_longer(as_tibble(mu), cols = everything(), 
+                      names_to = "id", values_to = "mu") |>  
+  inner_join(nd, by = "id") # 9R x 4 tibble that includes predictors
+```
+
+## Plot of Posterior Switch Probability
+
+```{r}
+ggplot(draws) + geom_density(aes(mu)) + xlim(0, 1) +
+  facet_wrap(~ dist + arsenic, labeller = "label_both")
+```
+
+## Value-Added of a Study
+
+```{r}
+posterior_vs_prior(post)
+```
+
+## Conclusion
+
+-   The `stan_glm` function uses the same syntax (see `?formula`) and likelihood (Gaussian by default) as `glm`
+-   By changing the `family` from `gaussian` (to, e.g., `binomial)` and / or its `link` function (to, e.g., `probit`), you can estimate Generalized Linear Models (GLMs)
+-   GLMs are challenging because $\gamma$ and $\beta_k$ are in the units of $\eta = g\left(\mu\right)$, where $\mu = \mathbb{E}Y \mid \mathbf{x}$ & $g$ is an increasing function
+-   In order for $\mu$ to be reasonable with a nonlinear inverse link function, $\eta$ usually needs to be in a small subset of $\mathbb{R}$, which implies $\gamma \approx g\left(\mathbb{E}Y\right)$ and $\beta_k$ can't be too large in magnitude (hence the necessity of subjective prior distributions)
