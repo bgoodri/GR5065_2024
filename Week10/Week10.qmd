@@ -1,0 +1,346 @@
+---
+title: "Model Checking and Comparison"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Obligatory Disclosure
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+## Ghosts of Homeworks Past
+
+Today, the BEA [announced](https://www.bea.gov/news/2024/gross-domestic-product-fourth-quarter-and-year-2023-third-estimate-gdp-industry-and) GDP growth in the fourth quarter of 2023 was estimated to be $3.4$%, while GDI growth was estimated at $4.8$%.
+
+If we have a normal prior on $\mu$ with expectation $m$ and standard deviation $s$ and an i.i.d. normal likelihood for $P$ and $I$ given the unknown $\mu$ and the known $\sigma = 0.7$, then the posterior distribution for $\mu$ is normal with expectation $\frac{\frac{m}{s^2} + \frac{P + I}{\sigma^2}}{\frac{1}{s^2} + \frac{2}{\sigma^2}}$ and standard deviation $\sqrt{\frac{1}{\frac{1}{s^2} + \frac{2}{\sigma^2}}}$. Thus, the recommendation to average $P$ and $I$ to form GDO corresponds to this posterior distribution iff $s \uparrow \infty$, which is an absurd prior.
+
+## Introduction
+
+-   People often feel that different quantitative methods should be used in different situations:
+    -   If you have a RCT, use design-based inference
+    -   If you have a survey, use MLE
+    -   If you want to predict, use supervised learning
+    -   If you have strong priors, use Bayesian
+-   But Bayesian inference is a belief management system and should be applicable to all of those scenarios and more
+-   Bayesians can generate predictions, so we want to contrast that with the predictions of supervised learning
+
+## What Is Supervised Learning?
+
+-   Supervised Learning is like Frequentism without probability
+
+-   Main goal is to predict future outcomes, rather than interpret
+
+    -   Usually adds a penalty term to the log-likelihood
+    -   Can use more flexible forms than linearity
+    -   Requires splitting into $\approx 80$% training and $\approx 20$% testing
+    -   Usually subsplits the training data into $K$ folds (or bootstraps) to choose tuning parameters for the penalty
+
+-   Bayes Rule sometimes is referred to, but it is not Bayesian
+
+-   Maximizes a function in the training data to produce a point estimate of $\boldsymbol{\theta}$ that is then used to predict in the testing data
+
+## Penalization vs. Priors
+
+-   These penalty functions are often some [prior](https://osf.io/4ev8h/) log-kernel conditional on an unknown tuning parameter, $\lambda$ ![van Erp, Oberski, and Mulder (2019)](table1.png)
+
+-   Penalty functions make for [poor priors](https://statmodeling.stat.columbia.edu/2017/11/02/king-must-die/) because they are intended to shift the mode rather than reflect beliefs
+
+## Generative Model with Laplace Priors
+
+::: columns
+::: {.column width="56%"}
+Math Notation $\begin{eqnarray*} \forall n: y_n & \equiv & \eta_n + \epsilon_n \\ \forall n: \epsilon_n & \thicksim & \mathcal{N}\left(0,\sigma\right) \\ \forall n: \eta_n & \equiv & \mu + \sum_{k = 1}^K \beta_k \left(x_{nk} - \overline{x}_k\right) \\ \mu & \thicksim & \mathcal{N}\left(m_0, s_0\right) \\ \forall k: \beta_k & \equiv & -\lambda / \sigma \ \mathrm{sign}\left(\theta_k\right) \ln\left(1 - \left|\theta_k\right|\right) \\ \lambda & \thicksim & ??? \\ \sigma & \thicksim & \mathcal{E}\left(r\right) \\ \forall k: \theta_k & \thicksim & \mathcal{U}\left(-1,1\right) \end{eqnarray*}$
+:::
+
+::: {.column width="44%"}
+::: fragment
+Code to Draw Parameters
+
+```{r}
+library(dplyr)
+R <- 10000
+prior <- tibble(
+  theta = runif(R, -1, 1),
+  sigma = rexp(R, 1),
+  # a choice for ???
+  lambda = rexp(R, 1 / .75),
+  beta = -lambda / sigma * 
+    sign(theta) *
+    log(1 - abs(theta)))
+```
+
+\
+But supervised learning takes $\lambda$ to be a point, rather than a random variate from a prior
+:::
+:::
+:::
+
+## Plotting Prior Draws of $\beta \bigcap \bcancel{\lambda} \bigcap \bcancel{\sigma}$
+
+```{r}
+library(ggplot2); ggplot(prior) + geom_density(aes(beta)) + xlim(-4,4)
+```
+
+## Choosing Tuning Parameters
+
+-   How does supervised learning choose $\lambda$?
+
+    -   Split data into $N_1$ training observations and $N_2$ testing observations with $N_1 / N_2 \approx 4$
+
+    -   Split training data into $K$ folds each with $N_1 / K$ rows
+
+        -   Guess $\lambda$, solve for $\boldsymbol{\beta}$ using $K - 1$ folds, predict outcomes in $K$-th fold, average loss over observations
+
+        -   Improve guess for $\lambda$, stop when average loss is stable
+
+-   Predict testing outcomes given $\widehat{\boldsymbol{\beta}}$ and average loss over $N_2$ observations. The loss function can be the log-likelihood but is often [improper](https://en.wikipedia.org/wiki/Scoring_rule#Propriety_and_consistency).
+
+## Loss Functions
+
+-   Mean-squared error (in testing): $\frac{1}{N_2} \sum_{n = 1}^{N_2} \left(y_n - \eta_n\right)^2$
+
+-   MSE is proportional to a Gaussian log-density (given $\sigma$): $-N_2\log\left(\sigma \sqrt{2\pi}\right) - \frac{1}{2 \sigma^2}\sum_{n = 1}^{N_2}\left(y_n - \eta_n\right)^2$
+
+-   You will often see the square root of MSE but a monotonic transformation does not change the ranking of models
+
+-   With binary outcomes, the loss function is usually some function of "correct" and "incorrect" classifications where an observation is classified as successful if $\eta_n > 0$
+
+. . .
+
+-   For Bayesians, a default utility is log density / mass of $Y$
+
+## Expected Log Predictive Density {.smaller}
+
+-   Decision theory says to choose the model that maximizes *expected* utility $$\mbox{ELPD} = \mathbb{E}_Y \ln f\left(y_{N + 1}, y_{N + 2}, \dots, y_{2N} \mid y_1, y_2, \dots, y_N\right) = \\
+    \sum_{n = 1}^{N} \int_\Omega 
+    \ln f\left(y_{N + n} \mid \mathbf{y}\right) f\left(y_{N + n} \mid \mathbf{y} \right) dy_{N + n} = \\
+    \sum_{n = 1}^N \int_\Omega \ln \int_\Theta f\left(y_{N + n} \mid \boldsymbol{\theta}\right) f\left(\boldsymbol{\theta} \mid \mathbf{y}\right) d\boldsymbol{\theta} dy_{N + n} \approx  \\
+    \sum_{n = 1}^N \ln f\left(y_n \mid \mathbf{y}_{-n}\right) = \sum_{n = 1}^N
+    \ln \int_\Theta f\left(y_n \mid \boldsymbol{\theta}\right) 
+    f\left(\boldsymbol{\theta} \mid \mathbf{y}_{-n}\right) d\boldsymbol{\theta}$$
+
+where $y_{-n}$ indicates all but the $n$-th observation (like in R)
+
+. . .
+
+-   $f\left(y_n \mid \boldsymbol{\theta}\right)$ is just the $n$-th likelihood contribution, but can we somehow obtain $f\left(\boldsymbol{\theta} \mid \mathbf{y}_{-n}\right)$ from (draws from) $f\left(\boldsymbol{\theta} \mid \mathbf{y}\right)$? Yes, assuming $y_n$ does not have an outsized influence on the posterior.
+
+## Posterior Distribution in a NES Model
+
+```{r}
+library(rstanarm)
+options(mc.cores = parallel::detectCores())
+data("nes", package = "rosdata")
+nes <- mutate(nes, income = as.factor(income), age = age / 10)
+nes2000 <- filter(nes, year == 2000, !is.na(rvote)) %>% 
+  group_by(age, income, white) %>% 
+  summarize(R = sum(rvote), D = n() - R, .groups = "drop")
+```
+
+```{r, post_logit}
+#| cache: true
+post_logit <- stan_glm(cbind(R, D) ~ age + I(age^2) + income + white,
+                       family = binomial, data = nes2000,
+                       prior_intercept = normal(0, 0.2),
+                       prior = normal(0, 0.5))
+(loo_post_logit <- loo(post_logit, save_psis = TRUE))
+```
+
+## Model Comparison with PSISLOOCV
+
+```{r}
+post_probit <- update(post_logit, family = binomial(link = "probit"),
+                      prior_intercept = normal(0, 0.2 * 1.6),
+                      prior = normal(0, 0.5 * 1.6))
+loo_post_probit <- loo(post_probit, save_psis = TRUE)
+loo_compare(loo_post_logit, loo_post_probit)
+```
+
+. . .
+
+This strongly suggests that there is little difference in expected utility between a logit and a probit model, but if you had to choose one, the probit model is slightly preferable in this case. You could take a weighted average of the predictions instead:
+
+```{r}
+loo_model_weights(list(logit=loo_post_logit, probit=loo_post_probit))
+```
+
+## Posterior Predictive Checking w/ PSIS
+
+```{r}
+pp_check(post_probit, plotfun = "loo_pit_overlay", 
+         psis_object = loo_post_probit$psis_object)
+```
+
+## $R^2$ for GLMs
+
+-   The McElreath reading criticizes the use of (Frequentist) $R^2$, which can only be made larger by including more predictors and fails to capture how well a model predicts future data
+
+-   These problems can be averted by calculating a posterior distribution of $R^2$ values based on how well $y_n$ is predicted by $\boldsymbol{\theta} \mid \mathbf{y}_{-n}$, which is somewhat similar to an "adjusted" $R^2$
+
+```{r}
+rbind(worse  = summary(bayes_R2(post_probit)), 
+      better = summary(loo_R2(post_probit)))
+```
+
+## Comparison with Lasso
+
+```{r}
+#| message: false
+lasso <- glmnet::glmnet(x = model.matrix(post_logit)[, -1], 
+                        y = post_logit$y, family = "binomial")
+round(coef(lasso, s = seq(from = 0.1, to = 0.01, length.out = 10)), 2)
+```
+
+-   For values of $\lambda$ greater than $0.05$, all estimated coefficients are zero except for that on `white`
+
+-   For smaller values of $\lambda$, more estimates are non-zero
+
+-   What $\lambda$ predicts best in held-out folds (if there were any)?
+
+## How to Proceed?
+
+-   "Frequentist": Proceed as if $\beta_k$ is zero unless you reject the null that it is zero, in which case proceed as if $\beta_k = \widehat{\beta_k}$
+
+    -   This is not Frequentist but an invention of journals
+
+    -   It is an open invitation for $p$-hacking
+
+    -   The distribution of published point estimates is biased
+
+-   Supervised Learning: Proceed as if $\beta_k = \widehat{\beta}_k$, which may be $0$, given the optimal $\lambda$ (based on accuracy in held out folds)
+
+-   Bayesian: Proceed with your (draws from the) posterior distribution of $\beta_k$ , none of which are exactly zero
+
+## Logit Model, No Intercept, 1 Predictor
+
+```{r}
+#| echo: false
+log_prior <- function(beta_proposal, location = 0, scale = 1 / sqrt(2)) {
+  return(-log(2 * scale) - abs( (beta_proposal - location) / scale ))
+}
+log_sum_exp <- function(a,b) {
+  m <- pmax(a,b)
+  return( ifelse(a > b, m + log1p(exp(b - m)), 
+                        m + log1p(exp(a - m))) )
+}
+ll <- function(beta_proposal, x, y) {
+  stopifnot(is.numeric(beta_proposal), is.numeric(x), is.numeric(y))
+  neg_x_beta_proposal <- -outer(x, beta_proposal)
+  denominator <- log_sum_exp(0, neg_x_beta_proposal)
+  return(colSums(neg_x_beta_proposal[y == 0, , drop = FALSE]) - 
+         colSums(denominator))
+}
+set.seed(12345)
+N <- 9
+y <- c(rep(1:0, times = 4), 1)
+x <- rnorm(N)
+LIM <- c(-4, 10)
+curve(exp(log_prior(beta)), from = LIM[1], to = LIM[2], xname = "beta", ylab = "On log-scale",
+      xlab = expression(beta), log = "y", ylim = c(1e-8, 0.6), n = 1001, las = 1)
+curve(exp(ll(beta, x, y)), from = LIM[1], to = LIM[2], xname = "beta", 
+      add = TRUE, col = "red", lty = "dashed", log = "y", n = 1001)
+kernel <- function(beta, x, y) {
+  exp(ll(beta, x, y) + log_prior(beta))
+}
+denom <- integrate(kernel, x = x, y = y, lower = -Inf, upper = Inf)$value
+curve(kernel(beta, x, y) / denom, from = LIM[1], to = LIM[2], xname = "beta", 
+      add = TRUE, col = "blue", lty = "dotted", log = "y", n = 1001)
+legend("topright", legend = c("Laplace prior", "likelihood", "posterior"), 
+       col = c(1,2,4), lty = 1:3, box.lwd = NA)
+```
+
+## Okun's Law Revisited
+
+```{r}
+source(file.path("..", "Week07", "macroeconomic_data.R"))
+```
+
+```{r}
+post <- stan_glm(GDO ~ x, data = data, seed = 12345,
+                 prior_intercept = normal(3, 0.5), # on mu
+                 prior = normal(-2, 1),            # on beta
+                 prior_aux = exponential(0.5))     # on sigma
+```
+
+```{r}
+loo_post <- loo(post, save_psis = TRUE)
+# 201 invalidates the PSISLOOCV estimator of the ELPD
+plot(loo_post, label_points = TRUE)
+```
+
+## Better Posterior Predictive Checking
+
+```{r}
+#| message: false
+loo_post <- loo(post, k_threshold = 0.7, save_psis = TRUE) # w/o 201
+pp_check(post, plotfun = "loo_intervals",
+         psis_object = loo_post$psis_object)
+```
+
+## An Example of Decent Calibration
+
+```{r}
+pp_check(post, plotfun = "loo_pit_overlay", 
+         psis_object = loo_post$psis_object)
+```
+
+## Comparison w/ "Robust" Regression
+
+-   Anything involving squared error is not "resistant", in the sense that the model can have an arbitrarily large sensitivity to any one extreme observation
+
+-   Some estimators minimize an objective function that involves some other function of the errors besides the unweighted sum-of-squares
+
+```{r}
+#| message: false
+library(robust)
+which(lmRob(GDO ~ x, data = data, trace = FALSE)$M.weights == 0)
+```
+
+. . .
+
+Thus, at least in this case, both `lmRob` and `loo` flag quarter $201$ as a problem, but `lmRob` also drops other quarters.
+
+## Whither [Data Science](https://datascience.columbia.edu/event/data-science-day-2024/?utm_source=newsletter&utm_medium=email&utm_campaign=Highlights+032724)?
+
+::: columns
+::: {.column width="50%"}
+[Conway's](http://drewconway.com/zia/2013/3/26/the-data-science-venn-diagram) Venn Diagram
+
+[![](https://images.squarespace-cdn.com/content/v1/5150aec6e4b0e340ec52710a/1364352051365-HZAS3CLBF7ABLE3F5OBY/Data_Science_VD.png)](http://drewconway.com/zia/2013/3/26/the-data-science-venn-diagram)
+:::
+
+::: {.column width="50%"}
+::: fragment
+What happens if you equate
+
+::: incremental
+-   [Probability]{style="color: green"}
+-   [Priors and Model Building]{style="color: blue"}
+-   [Markov Chain Monte Carlo]{style="color: red"}
+-   Since at least $1990$, Bayesian estimation has been what data science purported to be but isn't
+-   Data science came along later but largely ignored it
+:::
+:::
+:::
+:::
