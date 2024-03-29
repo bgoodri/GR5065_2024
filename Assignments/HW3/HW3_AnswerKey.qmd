@@ -1,0 +1,205 @@
+---
+title: "GR5065 HW3 Answer Key"
+format: 
+  pdf:
+    number-sections: true
+    include-in-header:
+      text: |
+        \pagenumbering{gobble}
+        \usepackage{amsmath}
+        \usepackage{cancel}
+editor: visual
+execute: 
+  echo: true
+---
+
+```{r}
+#| message: false
+library(dplyr)
+vetoes <- readr::read_csv("vetoes.csv", show_col_types = FALSE) |> 
+  filter(Term < 39 | Term > 40)
+```
+
+These data were assembled at
+
+<https://www.presidency.ucsb.edu/statistics/data/presidential-vetoes>
+
+which also has a brief explanation of the process and the variables.
+
+# Literature
+
+[King (1989)](https://dash.harvard.edu/bitstream/handle/1/4455014/varspecec.pdf?sequence=1&isAllowed=y) derives the "generalized event count" (GEC) distribution, which is then applied to veto challenges (which are defined as the number of vetoed bills where either the House or the Senate holds a vote to override, regardless of whether the vote exceeds the $\frac{2}{3}$ threshold). 
+The PMF of the GEC distribution can be written, for $\lambda_i, \sigma^2 > 0$ , as$$\Pr\left(y_i \mid \lambda_i, \sigma^2\right) = \begin{cases}
+\Pr\left(0 \mid \lambda_i, \sigma^2\right) \prod\limits_{j = 1}^{y_i} \frac{\lambda_i + \left(\sigma^2 - 1\right)\left(j - 1\right)}{j\sigma^2} & \text{if } y_i > 0 \\
+e^{-\lambda_i} & \text{if } y_i = 0, \sigma^2 = 1 \\
+\sigma^2 \frac{-\lambda_i}{\sigma^2 - 1} & \text{if } y_i = 0, \sigma^2 > 1 \\
+\sigma^2 \frac{-\lambda_i}{\sigma^2 - 1} \frac{1}{D_i} & \text{if } y_i = 0, \sigma^2 <1, -1 \leq \frac{-\lambda_i}{\sigma^2 - 1} \\
+0 & \text{otherwise}
+\end{cases}$$
+
+where$$D_i = \sum\limits_{m = 0}^{\left[\frac{-\lambda_i}{\sigma^2 - 1}\right) + 1} \frac{\Gamma\left(\frac{-\lambda_i}{\sigma^2 - 1} + 1\right)}{m!\Gamma\left(\frac{-\lambda_i}{\sigma^2 - 1} + 1 - m\right)} \left(1 - \sigma^2\right)^m \left(\sigma^2\right)^{\frac{-\lambda_i}{\sigma^2 - 1} - m}$$ and $\left[\frac{-\lambda_i}{\sigma^2 - 1}\right)$ indicates the smallest integer that is at least as great as $\frac{-\lambda_i}{\sigma^2 - 1}$ . Although $\sigma^2$ is *not* the variance of $Y_i$, if $\sigma^2 = 1$, then the variance is equal to $\lambda_i$ because the GEC specializes to the Poisson distribution. If $\sigma^2 > 1$, the GEC specializes to the negative binomial distribution, which has more variance than a Poisson distribution. If $\sigma^2 < 1$, then the GEC exhibits underdispersion with variance less than that of a Poisson distribution. Thus, the advantage to the GEC is that counts can be modeled without taking a firm position on whether the count has less, the same as, or more variance than a Poisson random variable with expectation $\lambda_i = e^{\eta_i}$ where $\eta_i = \alpha + \sum_{k = 1}^K \beta_k x_{nk}$ is a linear predictor. Thus, the GEC is a more general distribution that can be used with essentially zero 
+additional cost.
+
+King (1989) models the number of veto challenges with the GEC, which does not have an upper bound if you do not condition on the number of regular vetoes. However, it might well have been better to use the GEC to model the number of regular vetoes and the number of veto challenges with a binomial model whose size is equal to the number of regular vetoes as we did below.
+
+King (1989)'s linear predictor includes a dummy variable for whether it is a presidential election year, the proportion of Congress that is of the same party as the president (without distinguishing between the House and the Senate), the percentage of the public (in a survey) who approves of the job that the president has been doing, and the logarithm of the number of regular vetoes (which is like an offset except the coefficient is estimated). These predictors are perhaps fine when merely considering whether a veto is challenged, as opposed to whether the challenge is successful.
+
+Like most papers written before 1990, King (1989) uses Maximum Likelihood Estimation (MLE) to obtain point estimates of the parameters, $\sigma^2$, $\alpha$, and each $\beta_k$. However, he undoubtedly would have used MLE even if (or after) modern Bayesian methods were available. Much of King's work implicitly or explicitly presumes that the posterior distribution is multivariate normal and centered on the MLEs when the priors on the parameters are improper. In other words, King essentially uses MLE as a Bayesian estimator --- which both Fisher and Bayesians would be appalled by, albeit for very different reasons --- rather than using MCMC and avoiding any assumption that the posterior distribution is multivariate normal.
+
+If you take a Bayesian view, then it is irrelevant whether the data is or is not a "sample" from some larger population because Bayesians condition on the available data, whereas Frequentists calculate probabilities marginal over all possible datasets of size $N$ that could have been sampled from a population with parameters, $\sigma^2$, $\alpha$, and each $\beta_k$. Thus, those Frequentist probabilities ($p$-values, confidence intervals, etc.) only make sense if the $N$ observations in the available data are a random sample from a population (and most estimators further assume the available data are a *simple* random sample). That assumption would be flawed in the case of vetoes (and many other situations) because we have data on all (past) vetoes rather than a random sample of vetoes. It is true that there will be more vetoes in the future, but that does not imply that the vetoes from the past are a simple random sample from some population of vetoes. Thus, the Frequentist interpretatation of probability --- the proportion of times that an event occurs as the number of randomizations approaches infinity --- is inapplicable to the study of vetoes (or any other political institution). If another researcher decided to replicate the original study, the second dataset would be identical to (or a superset of) the first, rather than a second sample from the same population as the first.
+
+# Generative Model
+
+If the President's party controls either or both of the House of Representatives or the Senate, then a bill that the President opposes is unlikely to even come to a vote and if it does, then it usually will not pass. Thus, the operative consideration is which party is in control of the House and Senate, and almost all of the regular vetoes will occur in situations in which the President's party controls neither the House nor the Senate. So, we can manipulate the data accordingly and include an interaction term in the model.
+
+```{r}
+vetoes <- mutate(vetoes, 
+                 House_minority = House < 50,
+                 Senate_minority = Senate < 50,
+                 House = House - 50,
+                 Senate = Senate - 50)
+```
+
+If a bill is vetoed, at least half the House and Senate must have supported it originally. Thus, when considering whether a veto will be overridden, the number of seats held by members of the President's party is more important because it takes two-thirds in favor to override.
+
+In a count model, it is difficult and sometimes impossible to keep the maximum realization in a reasonable range, particularly when your priors are independent. Shifting the intercept left can help. In linear models, it was usually tolerable to think of the intercept --- relative to centered predictors --- as the expected outcome irrespective of the predictors. In count models with log link functions, that is not quite right. We need to think of the intercept as the log expected count given that all the predictors are average. When the House and Senate are "average", there are not going to be many vetoes and almost none of those are going to get overriden. Almost all of the vetoes stem from situations where the House and Senate are far from average.
+
+\newpage
+
+```{r}
+R <- 10000
+avg_House_minority <- mean(vetoes$House_minority)
+avg_Senate_minority <- mean(vetoes$Senate_minority)
+avg_both_minority <- mean(vetoes$House_minority * vetoes$Senate_minority)
+avg_House = mean(vetoes$House)
+avg_Senate = mean(vetoes$Senate)
+
+prior <-
+  tibble(gamma = rnorm(R, mean = log(1), sd = 0.75),
+         beta_House_minority = rnorm(R, mean = 0.25, sd = 0.1),
+         beta_Senate_minority = rnorm(R, mean = 0.25, sd = 0.1),
+         beta_both_minority = rnorm(R, mean = 1, sd = 0.5),
+         beta_House = rnorm(R, mean = 0, sd = 0.05),
+         beta_Senate = rnorm(R, mean = 0, sd = 0.05),
+         alpha = gamma - beta_House_minority * avg_House_minority -
+           beta_Senate_minority * avg_Senate_minority -
+           beta_both_minority * avg_both_minority -
+           beta_House * avg_House - beta_Senate * avg_Senate,
+         phi = rexp(R, rate = 1 / 20),
+         lambda = rnorm(R, mean = qlogis(0.05), sd = 0.2),
+         theta_House = rnorm(R, mean = -0.25, sd = 0.1),
+         theta_Senate = rnorm(R, mean = -0.25, sd = 0.1))
+
+predictions <- cross_join(prior, vetoes) |>   
+  transmute(
+    House_minority,  # retain these two predictors for the plot
+    Senate_minority, # even though they are not actually predictions
+    eta = alpha + beta_House_minority  * House_minority +
+          beta_Senate_minority * Senate_minority +
+          beta_both_minority * House_minority * Senate_minority +
+          beta_House * House + beta_Senate * Senate,
+    mu = exp(eta),
+    epsilon = rgamma(n(), shape = phi, rate = phi),
+    regular = rpois(n(), mu * epsilon),
+    overrides = rbinom(n(), size = regular,
+                       prob = plogis(lambda + theta_House * House + 
+                                     theta_Senate * Senate)))
+```
+
+We can then verify that the predictions from our generative model are reasonable, which is a necessary and almost sufficient condition for our priors on the parameters to be reasonable.
+
+```{r}
+#| message: false
+#| warning: false
+library(ggplot2)
+ggplot(predictions) + 
+  geom_bar(aes(x = regular, y = after_stat(prop))) +
+  xlim(-1, 30)
+
+ggplot(predictions) +
+  geom_bar(aes(x = overrides, y = after_stat(prop))) +
+  xlim(-1, 25) +
+  facet_wrap(~ House_minority + Senate_minority, labeller = label_both)
+```
+
+This is somewhat plausible in the sense that if the President's party controls both the House and the Senate, there will be no overrides because there will be essentially no vetoes to override. If the President's party controls neither the House nor the Senate, almost anything could happen but none of those individually have much probability. If the President's party controls either the House or the Senate but not both, then the modal number of overrides is zero, but perhaps there could be some. However, it seems implausible that there would be more than a handful.
+
+# Posterior $\mid$ Regular Vetoes
+
+```{r}
+#| message: false
+#| warning: false
+library(rstanarm)
+options(mc.cores = parallel::detectCores())
+```
+
+You need to make sure that your priors are in the same order that R assumes, which is to put the interaction term last.
+
+```{r}
+post_regular <- stan_glm.nb(Regular ~ House_minority * Senate_minority +
+                              House + Senate,
+                            data = vetoes,
+                            prior_intercept = normal(log(1), 0.75),
+                            prior = normal(c(.25, .25, 0, 0, 1),
+                                           c(.1, .1, .05, .05, .5)),
+                            prior_aux = exponential(1 / 20))
+```
+
+The output can be confusing because it is compatible with that of `MASS::glm.nb`. What is called `reciprocal_dispersion` is $\frac{1}{\phi}$.
+
+```{r}
+as_tibble(post_regular) |> 
+  summarize(mean_phi = mean(1 / reciprocal_dispersion))
+```
+
+As $\phi \uparrow \infty$, the negative binomial approaches the Poisson (because each $\epsilon_n \rightarrow 1$) and in this case, the average draw of $\phi$ is much smaller than that (so $\epsilon_n$ has some variance).
+
+We can plot the posterior margins and compare them to the prior margins with
+
+```{r}
+#| message: false
+posterior_vs_prior(post_regular, regex_pars = "^[^r]") + 
+  theme(legend.position = "none")
+```
+
+These marginal distributions mostly make sense, but the precision with which the coefficient on the interaction term is
+estimated is much lower than for the other parameters. We could have perhaps used a stronger prior that reflected our
+theoretical belief that it is impossible for the coefficient on the interaction term to be negative.
+
+# Posterior Prediction
+
+We just need to create a `tibble` that has predictors in the counterfactual scenario where the Democrats have a bare majority in the House.
+
+```{r}
+nd <- tibble(House_minority = FALSE, Senate_minority = FALSE,
+             House = 0, Senate = 1)
+PPD <- posterior_predict(post_regular, newdata = nd)
+ggplot(tibble(vetoes = c(PPD))) +
+  geom_bar(aes(x = vetoes, y = after_stat(prop))) +
+  scale_x_sqrt()
+```
+
+The model thinks that the most likely number of vetoes is zero, although that only has about a $\frac{1}{3}$ chance, 
+and that the median number of vetoes is two.
+
+# Posterior $\mid$ Overrides
+
+```{r}
+post_overrides <- stan_glm(cbind(Overrides, Regular - Overrides) ~
+                             House + Senate,
+                           data = vetoes,
+                           family = binomial(link = "logit"),
+                           prior_intercept = normal(qlogis(0.05), 0.2),
+                           prior = normal(-0.25, 0.1))
+```
+
+We can calculate the probability of an override of a vetoed bill in the $110$th Congress as
+
+```{r}
+nd <- filter(vetoes, Term == 110)
+mu <- plogis(posterior_linpred(post_overrides, newdata = nd))
+ggplot(tibble(mu = mu[ , 1])) +
+  geom_density(aes(x = mu))
+```
+This is rather low because the Democrats did not have enough seats, although they did have majorities in both
+the House and the Senate.
