@@ -1,0 +1,434 @@
+---
+title: "Bayesian Regression Models with the brms R Package"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Obligatory Disclosure
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+## [Data Science Day, 2024](https://datascience.columbia.edu/event/data-science-day-2024/?utm_source=newsletter&utm_medium=email&utm_campaign=Highlights+032724)
+
+[![](https://images.squarespace-cdn.com/content/v1/5150aec6e4b0e340ec52710a/1364352051365-HZAS3CLBF7ABLE3F5OBY/Data_Science_VD.png)](http://drewconway.com/zia/2013/3/26/the-data-science-venn-diagram)
+
+See also Data Science Day in [2023](https://datascience.columbia.edu/event/data-science-day-2023/), [2022](https://datascience.columbia.edu/event/data-science-day-2022/), [2021](https://datascience.columbia.edu/event/data-science-day-2021/), [2020](https://datascience.columbia.edu/event/data-science-day-2020/), [2019](https://datascience.columbia.edu/event/data-science-day-2019/), [2018](https://datascience.columbia.edu/event/data-science-day-2018), and [2017](https://datascience.columbia.edu/event/data-science-day-2017).
+
+## Logit Model, No Intercept, 1 Predictor
+
+```{r}
+#| echo: false
+log_prior <- function(beta_proposal, location = 0, scale = 1 / sqrt(2)) {
+  return(-log(2 * scale) - abs( (beta_proposal - location) / scale ))
+}
+log_sum_exp <- function(a,b) {
+  m <- pmax(a,b)
+  return( ifelse(a > b, m + log1p(exp(b - m)), 
+                        m + log1p(exp(a - m))) )
+}
+ll <- function(beta_proposal, x, y) {
+  stopifnot(is.numeric(beta_proposal), is.numeric(x), is.numeric(y))
+  neg_x_beta_proposal <- -outer(x, beta_proposal)
+  denominator <- log_sum_exp(0, neg_x_beta_proposal)
+  return(colSums(neg_x_beta_proposal[y == 0, , drop = FALSE]) - 
+         colSums(denominator))
+}
+set.seed(12345)
+N <- 9
+y <- c(rep(1:0, times = 4), 1)
+x <- rnorm(N)
+LIM <- c(-4, 10)
+curve(exp(log_prior(beta)), from = LIM[1], to = LIM[2], xname = "beta", ylab = "On log-scale",
+      xlab = expression(beta), log = "y", ylim = c(1e-8, 0.6), n = 1001, las = 1)
+curve(exp(ll(beta, x, y)), from = LIM[1], to = LIM[2], xname = "beta", 
+      add = TRUE, col = "red", lty = "dashed", log = "y", n = 1001)
+kernel <- function(beta, x, y) {
+  exp(ll(beta, x, y) + log_prior(beta))
+}
+denom <- integrate(kernel, x = x, y = y, lower = -Inf, upper = Inf)$value
+curve(kernel(beta, x, y) / denom, from = LIM[1], to = LIM[2], xname = "beta", 
+      add = TRUE, col = "blue", lty = "dotted", log = "y", n = 1001)
+legend("topright", legend = c("Laplace prior", "likelihood", "posterior PDF"), 
+       col = c(1,2,4), lty = 1:3, box.lwd = NA)
+```
+
+## The **brms** Workflow
+
+![Figure 1 in Bürkner 2016](workflow.png)
+
+## Arguments to `brm`
+
+```{r}
+library(brms)
+args(brm)
+```
+
+## The `formula` Argument to `brm`
+
+-   Everything to the right of the `~` is the same in R
+-   The thing to the left of the `~` is often just the outcome
+-   However, `brm` introduces a new possibility for this syntax like `y | fun(variable)`, where `fun` could be
+    -   `cens()` and `trunc()` to specify known censoring or truncation bounds
+    -   `weights()` and `disp()`, which should not be used
+    -   `se()` to specify "known" standard errors
+    -   `trials()`, which is used in binomial models only
+    -   `cat()` to specify the possible categories
+
+## The `family` Argument to `brm`
+
+```{r}
+#| eval: false
+gaussian; student; binomial; bernoulli; beta-binomial; poisson; 
+negbinomial; geometric; Gamma; skew_normal; lognormal; 
+shifted_lognormal; exgaussian; wiener; inverse.gaussian; exponential; 
+weibull; frechet; Beta; dirichlet; von_mises; asym_laplace; 
+gen_extreme_value; categorical; multinomial; cumulative; cratio; 
+sratio; acat; hurdle_poisson; hurdle_negbinomial; hurdle_gamma; 
+hurdle_lognormal; hurdle_cumulative; zero_inflated_binomial; 
+zero_inflated_beta_binomial; zero_inflated_beta; 
+zero_inflated_negbinomial; zero_inflated_poisson; 
+zero_one_inflated_beta
+```
+
+. . .
+
+In short, there are a lot of log-likelihood functions that you can use for Stan via brms
+
+## The `prior` Argument to `brm` {.smaller}
+
+```{r}
+args(set_prior) # or usually just prior()
+```
+
+-   `prior` is a character string (in the Stan language) such as `"normal(0,5)"` but you can omit the quotation marks if you instead call `prior`, which calls `set_prior`
+-   `class` indicates what parameters the call to `set_prior` pertains to
+-   `coef` is the name of the parameter in question
+-   `group` is the name of the grouping factor (if applicable)
+-   `resp` is the name of the response variable in multivariate models
+-   `dpar` is the name of the distribution parameter (if applicable)
+-   `nlpar` is the name of the non-linear parameter (if applicable)
+-   `lb` is the lower bound of the parameter (default $-\infty$)
+-   `ub` is the upper bound of the parameter (default $\infty$)
+-   `check` whether priors should be checked for validity
+
+## The `get_prior` Function
+
+-   Input the `formula`, `data`, and `family` and get back the possible prior choices (and defaults)
+
+```{r}
+source(file.path("..", "Week07", "macroeconomic_data.R")) # Okun's Law
+get_prior(GDO ~ x, data = data, family = gaussian)
+```
+
+-   You generally should not use `brm`'s defaults in GR5065 but you should look at what they are
+
+## The `class` Argument to `set_prior`
+
+-   Refers to a type of parameter in the model
+-   Defaults to `"b"` which refers to (population-level) regression coefficients
+-   Other possible values are `"Intercept"`, `"sd"`, `"cor"`, `"sigma"` and others we may talk about later
+
+```{r}
+my_prior <- prior(normal(-2, 1), class = "b") + 
+  prior(normal(3, .5), class = "Intercept") +
+  prior(exponential(0.5), class = "sigma")
+```
+
+## Okun's Law Revisited
+
+```{r, Okun}
+#| cache: true
+#| results: hide
+options(mc.cores = parallel::detectCores())
+post <- brm(GDO ~ x, data = data, family = gaussian, prior = my_prior,
+             save_pars = save_pars(all = TRUE)) # for moment_match
+```
+
+```{r}
+post
+```
+
+## Using the `hypothesis` Function
+
+-   To do this in rstanarm, you would have to call `as_tibble`
+
+```{r}
+args(brms:::hypothesis.brmsfit)
+```
+
+-   Here `x` is the object produced by `brm` and `hypothesis` is a string, typically with an embedded `<` or `>`, such as
+
+```{r}
+hypothesis(post, "x < 0")
+```
+
+## PSISLOOCV Diagnostics
+
+```{r}
+#| warning: false
+loo_post <- loo(post, save_psis = TRUE)
+# 201 invalidates the PSISLOOCV estimator of the ELPD
+plot(loo_post, label_points = TRUE)
+```
+
+## Better Posterior Predictive Checking
+
+```{r}
+#| message: false
+loo_post <- loo(post, save_psis = TRUE, moment_match = TRUE)
+pp_check(post, type = "loo_intervals") # not called plotfun
+```
+
+## An Example of Good Calibration
+
+```{r}
+pp_check(post, type = "loo_pit_overlay")
+```
+
+## Other Post-Estimation Methods {.smaller}
+
+Many of the things you can do with an object produced by `brm` are analogous to rstanarm
+
+```{r}
+#| echo: false
+#| comment: ""
+matrix(c(gsub("\\.brmsfit$", "", methods(class = "brmsfit"))), ncol = 4) |> 
+  as_tibble() |> 
+  print(n = 23)
+```
+
+## Categorical Logit Model for $\Omega = 1:J$
+
+::: columns
+::: {.column width="53%"}
+Math Notation $\begin{eqnarray*} \forall n: y_n & \equiv & \arg\max_j \eta_{nj} + \epsilon_{nj} \\ \forall n,j: \epsilon_{nj} & \thicksim & \mbox{Gumbel}\left(0,1\right) \\ \forall n,j: \eta_{nj} & \equiv & \alpha_j + \sum_{k = 1}^K \beta_{kj} x_{nk} \\ \forall j: \alpha_j & \equiv & \gamma_j - \sum_{k = 1}^K \beta_{kj} \overline{x}_k \\ \forall j: \gamma_j & \thicksim & \mathcal{N}\left(m_{0j}, s_{0j}\right) \\ \forall k,j: \beta_{kj} & \thicksim & \mathcal{N}\left(m_{kj}, s_{kj}\right) \end{eqnarray*}$
+:::
+
+::: {.column width="47%"}
+::: fragment
+Code to Draw Parameters
+
+```{r}
+library(purrr)
+R <- 1000
+m0 <- rep(0, 3)
+# for identification
+s0 <- c(0, .5, .5) 
+m <- rep(0, 3)
+s <- rep(1, 3)
+prior <- map_df(1:3, ~ {
+  tibble(
+    j = .x,
+    gamma = rnorm(R, m0[j],
+                  s0[j]),
+    beta = rnorm(R, m[j],
+                 s[j])
+  )
+})
+dim(prior)
+```
+:::
+:::
+:::
+
+## Prior Predictive Distribution
+
+```{r}
+#| eval: false
+predictions <- 
+  cross_join(priors, data) |> 
+  group_by(j) |> 
+  transmute(eta = gamma + beta * x, # x has been centered
+            n = 1:length(x),        # index observations
+            .groups = "drop") |> 
+  # this is how to draw from a standard Gumbel
+  mutate(epsilon = -log(-log(runif(n()))),
+         r = rep(1:R, each = 3 * length(x))) |> 
+  group_by(n, r) |> 
+  summarize(y = which.max(eta + epsilon),
+            .groups = "drop") |> 
+  ungroup
+```
+
+. . .
+
+-   The probability that $y_n = j$ turns out to be $\mu_{j} = \frac{e^{\eta_j}}{\sum_{k = 1}^J e^{\eta_k}}$ so $\ell\left(\gamma, \beta;\mathbf{y}\right) = \sum_{n = 1}^N \sum_{j = 1}^J \mathbb{I}\left(y_n = j\right) \ln \frac{e^{\eta_j}}{\sum_{k = 1}^J e^{\eta_k}}$
+
+-   Called categorical, although SL refers to it as multinomial
+
+## Categorical Plants
+
+```{r}
+data(iris) # famous dataset
+colnames(iris)
+levels(iris$Species)
+my_prior <- prior(normal(0, 1), class = "Intercept", 
+                  dpar = "muversicolor") +
+            prior(normal(0, 1), class = "Intercept", 
+                  dpar = "muvirginica") +
+            prior(normal(0, 0.5), class = "b", dpar = "muversicolor") + 
+            prior(normal(0, 0.5), class = "b", dpar = "muvirginica")
+```
+
+```{r, iris}
+#| cache: true
+#| results: hide
+prior <- brm(Species ~ ., data = iris, family = categorical,
+             prior = my_prior, sample_prior = "only",
+             # check that this yields resonable predictions
+             save_pars = save_pars(all = TRUE)) 
+post <- update(prior, sample_prior = "no") # now condition
+```
+
+```{r}
+#| eval: false
+bayesplot::mcmc_areas(post, regex_pars = "^b") # plot on next slide
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+bayesplot::mcmc_areas(post, regex_pars = "^b")
+```
+
+## `posterior_` Functions
+
+```{r}
+#| fig-show: hide
+library(ggplot2)
+mu <- posterior_epred(post)   # expectations
+str(mu)    
+str(posterior_predict(post))  # predictions
+draws <- tibble(mu = c(mu), 
+                Species = rep(iris$Species, each = 4000 * 3))
+ggplot(draws) + # plot on next slide
+  geom_density(aes(x = mu)) +
+  facet_wrap(~ Species)
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+ggplot(draws) +
+  geom_density(aes(x = mu)) +
+  facet_wrap(~ Species)
+```
+
+## Survival Model with Censoring
+
+::: columns
+::: {.column width="50%"}
+Math Notation $\begin{eqnarray*} \forall n: y_n & \equiv & \begin{cases} y_{n}^{\ast} & \text{if }y_{n}^{\ast}<c\\ c & \text{if }y_{n}^{\ast}\geq c \end{cases} \\ \forall n: y_n^\ast & \thicksim & \mathcal{E}\left(1 / \mu_n\right) \\ \forall n: \mu_n & \equiv & e^{\eta_n} \\ \forall n: \eta_n & \equiv & \gamma + \\ & & \sum_{k = 1}^K \beta_{k} \left(x_{nk} - \overline{x}_k\right) \\ \gamma & \thicksim & \mathcal{N}\left(m_0, s_0\right) \\ \forall k: \beta_k & \thicksim & \mathcal{N}\left(m_k, s_k\right) \end{eqnarray*}$
+:::
+
+::: {.column width="50%"}
+::: fragment
+Code to Draw Outcomes
+
+```{r}
+#| eval: false
+m0 <- 5
+s0 <- 1 
+m <- 0
+s <- 2
+c <- 6
+priors <- tibble(
+  gamma = rnorm(R, m0, s0),
+  beta  = rnorm(R, m, s)
+)
+predictions <-
+  cross_join(data, priors) |> 
+  transmute( # x is centered
+    eta = gamma + beta * x,
+    mu = exp(eta),
+    y_star = rexp(length(x),
+                  1 / mu),
+    y = pmin(y_star, c))
+```
+:::
+:::
+:::
+
+## Log-likelihood for Survival Model
+
+-   If $y_n < c$, we observed the survival time exactly
+
+-   If $c = y_n < y_n^\ast$ , we observed a lower bound$$\ell\left(\gamma, \beta; \mathbf{y}\right) = \sum_{n = 1}^N \left[\mathbb{I}\left(y_n < c\right) \ln f\left(y_n \mid \eta_n\right) + \\ \mathbb{I}\left(y_n = c\right) \ln \left(1 - F\left(c \mid \eta_n\right)\right)\right]$$ where $f$ is a PDF and $F$ is the corresponding CDF
+
+-   Other distributions, such as Weibull, are more commonly used in survival models than the exponential, but the main aspects of the generative model are similar
+
+## Example of Survival Model
+
+```{r}
+data(kidney, package = "brms")
+as_tibble(kidney)
+my_prior = prior(normal(0, 3), class = "Intercept") +
+  prior(normal(0, 1), class = "b")
+```
+
+```{r, survival}
+#| cache: true
+#| results: hide
+post <- brm(time | cens(censored) ~ age * sex + disease,
+            data = kidney, family = exponential, prior = my_prior)
+```
+
+## Numerical Summary of Results
+
+```{r}
+post
+```
+
+## Understanding the Effect of Age
+
+```{r}
+#| fig-show: hide
+draws <- posterior_epred(post) # 4000 x N matrix
+low  <- apply(draws, MARGIN = 2, FUN = quantile, probs = 0.05)
+high <- apply(draws, MARGIN = 2, FUN = quantile, probs = 0.95)
+med  <- apply(draws, MARGIN = 2, FUN = median)
+kidney <- mutate(kidney, low = low, med = med, high = high)
+ggplot(kidney) + # plot on next slide
+  geom_ribbon(aes(x = age, ymin = low, ymax = high), 
+              color = "lightgrey", alpha = 0.5) +
+  geom_line(aes(x = age, y = med),  color = "black") +
+  facet_wrap(~ sex + disease, ncol = 4, labeller = label_both) + 
+  labs(x = "age",
+       y = "Expected survival time")
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+ggplot(kidney) +
+  geom_ribbon(aes(x = age, ymin = low, ymax = high), 
+              color = "lightgrey", alpha = 0.5) +
+  geom_line(aes(x = age, y = med),  color = "black") +
+  facet_wrap(~ sex + disease, ncol = 4, labeller = label_both) +
+  labs(x = "age",
+       y = "Expected survival time")
+```
