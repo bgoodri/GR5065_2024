@@ -1,0 +1,121 @@
+---
+title: "GR5065 HW4"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \pagenumbering{gobble}
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+    keep-tex: true
+editor: visual
+execute: 
+  echo: true
+---
+
+# Wages
+
+We are going to consider an individual's (not their household's) income from wages and salary in the 2022 American Community Survey (ACS), which is reasonably representative because it is technically illegal to not respond to it.
+
+You should choose a state whose population is much smaller than New York to download the data for, using the following pattern but changing the `FILE` to be "csv_p\*\*.zip" where the asterisks are the two-letter postal abbreviation for that state (in lower case). See the vector `state.abb` in R if you are unsure of the postal code for the state you want to use.
+
+```{r}
+#| message: false
+library(dplyr)
+if (!any(list.files() == "ACS.zip")) {
+  ROOT <- "https://www2.census.gov/programs-surveys/acs/data/pums/2022/1-Year/"
+  FILE <- "csv_pny.zip" # change this to a state that is not ny
+  download.file(paste0(ROOT, FILE), destfile = "ACS.zip")
+  unzip("ACS.zip")
+}
+ACS <- readr::read_csv(list.files(pattern = "csv$"), show_col_types = FALSE) |>  
+  filter(WAGP > 0) |> 
+  select(RT:WAOB) |>  
+  mutate(censored = WAGP == max(WAGP))
+```
+
+The outcome variable in question is called `WAGP`. As can be seen, the wage and salary data are "top-coded", which is to say that a small percentage of the largest values have been recorded as some state-specific number, $c$,
+
+```{r}
+summarize(ACS, c = max(WAGP), n = sum(censored)) # your state will be somewhat different
+```
+
+that is less than their actual wages to prevent them from being individually identifiable.
+
+It is commonplace in economics to model the *logarithm* of a worker's wages, which is thought to be conditionally normal given the worker's characteristics (but without censoring). You need to construct a plausible model for log-wages in your chosen state that takes into account the fact that the observed log-wages are top-coded at $\ln c$. To do so, you will need to read through the data [dictionary](https://www2.census.gov/programs-surveys/acs/tech_docs/pums/data_dict/PUMS_Data_Dictionary_2022.txt) to see how the potential predictors are coded, but keep in mind that these data do not include any household-level variables, only person-level variables (starting with `AGEP` and excluding any "allocation flags" or "person weights").
+
+## Generative Model
+
+Use your chosen predictors in a plausible generative model where log-wages have Gaussian errors (with unknown standard deviation $\sigma$). From there, you can transform the generated log-wages to wages (in units of dollars) and apply the censoring at whatever $c$ is for your state, which is essentially the same as a survival model with censoring. Make sure to center the predictors you use, after doing any transformations to them (such as creating dummy variables from a factor).
+
+Use `geom_density` in the ggplot2 package to plot the prior predictive distribution of wages up to $c$. In what sense is the plot of your prior predictive beliefs about wages reasonable?
+
+## Posterior Distribution
+
+Use the `brm` function in the brms package to draw from the posterior distribution of the parameters in your generative model above for log-wages using a formula that starts like `brm(log(WAGP) | cens(censored) ~` .
+
+Use the `hypothesis` function to evaluate one substantive hypothesis that you might have about one or more of the parameters in your model.
+
+## Posterior Predictive Distribution
+
+Use the `posterior_predict` function to draw from the posterior predictive distribution of log-wages (with Gaussian error but without censoring) and then apply the `exp` function to obtain the posterior predictive distribution of wages (in dollar units). This will be a $R \times N$ matrix and you should apply then apply `rowMeans` function to it to obtain a vector of size $R$ with draws of your beliefs about average wages in your state. You may need to specify the `ndraws` argument to `posterior_predict` to be some value less than $4000$ in order to not run out of RAM.
+
+Use the `geom_density` function in the ggplot2 package to plot the distribution of your beliefs about average wages. Use the `geom_vline` function to add a vertical line at `mean(ACS$WAGP)`. Describe why the average of `WAGP` is an underestimate of average wages and to what degree?
+
+## Model Comparison
+
+Estimate another model on the same data that ignores the censoring and pretends that $c$ is an observed value rather than a lower bound, which many social scientists would do. Use the `loo_compare` function to compare the estimated ELPD of this model with the previous one. Which is expected to best predict future data from this data-generating process?
+
+\newpage
+
+# Inflation Expectations
+
+Assessments of inflation play an important role in some economic models, as well as models of presidential approval. The Federal Reserve Bank of New York regularly conducts a nationally representative survey (called the Survey of Consumer Expectations) that repeatedly asks a rotated random sample of people about (among other things) the direction and magnitude of future de / inflation. You can download the latest Survey of Consumer Expectations (SCE) via
+
+```{r}
+ROOT <- "https://www.newyorkfed.org/medialibrary/Interactives/sce/sce/downloads/data/"
+FILE <- "frbny-sce-public-microdata-latest"
+download.file(paste0(ROOT, FILE), destfile = "SCE.xlsx")
+SCE <- readxl::read_excel("SCE.xlsx", skip = 1, progress = FALSE) |> 
+  group_by(userid) |> 
+  slice_min(survey_date) |> # keep only the first time the person answered questions
+  ungroup()
+```
+
+but you will need to read the [documentation](https://www.newyorkfed.org/medialibrary/interactives/sce/sce/downloads/data/frbny-sce-survey-core-module-public-questionnaire.pdf) carefully to understand the details of the questions. The outcome we are considering is the numerical response to question `Q8v2part2`:
+
+> What do you expect the rate of inflation or deflation to be **over the next 12 months**. Please give your best guess.
+
+For this question, you should develop a linear model to predict this outcome variable using only *factual* questions about the respondent, their household, and / or their numerical (in)competence. In other words, do not use as predictors any questions that are opinions or speculation about the future.
+
+Also, new data will be released the morning of April 8th. The variables will be mostly the same, so you can work on this problem before then. But it is good to base your conclusions on a model applied to the latest data.
+
+## Generative Process
+
+Suppose the error when predicting person $n$'s inflation expectations is distributed Gaussian with an expectation of zero and a standard deviation of $\frac{\sigma}{\sqrt{\tau_n}}$. This specification differs from what we have done previously where the standard deviation of the errors was the same for all $n$. Further, suppose that your beliefs about $\tau_n$ are distributed Gamma with shape $\frac{\nu}{2}$ and rate $\frac{\nu}{2}$ (and hence $\tau_n$ has an expectation of $1$), where $\nu > 0$ is an additional unknown that has an exponential distribution with known rate. When $\tau_n$ is integrated out, the error for the $n$-th person is distributed Student $t$ with $\nu$ degrees of freedom and scale $\sigma$, so lower values of $\nu$ correspond to a heavier tailed error distribution. The scale parameter $\sigma > 0$ should also have an exponential prior with a known rate.
+
+Using functions in the dplyr package and base R, draw $R = 100$ times from the prior predictive distribution implied by the above under your linear predictor for each person's inflation expectations and your prior distribution on the parameters.
+
+## Estimation
+
+Use `brm` with `family = student` to draw from the posterior distribution of the parameters of your model, which includes $\sigma$, $\nu$, the intercept, and coefficients. You will need to specify non-default priors on these parameters that are the same as those used in the previous subproblem. Plot the marginal posterior densities of the parameters. Is the posterior distribution of $\nu$ large (indicating that the errors are almost normal with little difference from one person to the next) or small (indicating the opposite)?
+
+## Pareto $k$ Values
+
+Call the plot method for the object produced by `loo` with `label_points = TRUE`. Which, if any, observations are inconsistent with the assumption that the observation could be omitted without having a "large" effect on the posterior distribution? When examining these points, what, if anything, stands out as a possible problem that could make the posterior distribution overly sensitive to these observations?
+
+# Legal Analysis
+
+Read the following [article](https://www.lawfaremedia.org/article/there-is-no-general-first-amendment-right-to-distribute-machine-learning-model-weights) by a law professor named Alan Rozenshtein who argues
+
+> Unlike source code, which humans use to express ideas to each other, model weights function solely as machine-readable instructions. A careful look at the cases that first established that source code could, under certain circumstances, be First Amendment-protected speech, demonstrates why such protections should not extend to model weights.
+
+The first amendment to the U.S. Constitution was ratified in the late 1700s, and says (among other things) "Congress shall make no law $\dots$ abridging the freedom of speech". Write an essay that addresses, at least, the following questions:
+
+1.  Do you agree with Rozenshtein that model weights in machine / supervised learning models should not be considered "speech" in the context of the First Amendment?
+
+2.  Rozenshtein does not address Bayesian modeling explicitly, but do you think Rozenshtein would make the same argument about draws from a posterior distribution as he does about model weights in machine / supervised learning models?
+
+3.  Do you feel that draws from a posterior distribution should or should not be considered "speech" in the context of the First Amendment? Why?
