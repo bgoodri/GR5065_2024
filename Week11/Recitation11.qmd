@@ -1,0 +1,157 @@
+---
+title: "Recitation for Week11"
+author: "Apoorva Joshi"
+format:
+  revealjs:
+    embed-resources: true
+    self-contained-math: true
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Introduction
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   The brms package allows you to specify many more types of models than rstanarm because brms generates Stan code from R syntax at runtime
+-   It is even more important that you understand what a model is before trying to draw from the posterior distribution of the parameters using brms
+
+```{r}
+#| message: false
+library(dplyr)
+source(file.path("..", "Week07", "get_Gaba_data.R"), echo = FALSE)
+Gaba <- filter(Gaba, covid_deaths_diff >= 0)
+```
+
+## Choosing Priors
+
+```{r}
+#| message: false
+library(brms)
+options(mc.cores = parallel::detectCores())
+```
+
+```{r}
+get_prior(covid_deaths_diff | trials(Pop) ~ 
+            two_doses_percent + Trump_percent,
+          data = Gaba, family = binomial(link = "logit")) |> 
+  as_tibble() |> 
+  select(prior, class, coef) # defaults are terrible in this context
+```
+
+-   `covid_deaths_diff` is the change in the number of covid deaths between the summer of '22 and the summer of '21 (when mRNA vaccines became available for all adults)
+
+-   What priors would you use for $\gamma$, $\beta_1$, and $\beta_2$?
+
+## Calling the `prior()` Function
+
+Covid killed a few people per thousand in a year, so the prior on the intercept might be
+
+```{r}
+qlogis(3 / 1000)
+my_prior <- prior(normal(-5.8, 0.5), class = "Intercept")
+```
+
+. . .
+
+mRNA vaccines are expected to reduce the log-odds
+
+```{r}
+my_prior <- my_prior + 
+  prior(normal(-0.25, 0.1), class = "b", coef = "two_doses_percent")
+```
+
+Trump support is likely to be associated with other behaviors and policies that encourage covid deaths, besides opposition to vaccines or vaccine mandates
+
+```{r}
+my_prior <- my_prior + 
+  prior(normal(0.1, 0.05), class = "b", coef = "Trump_percent")
+```
+
+## Drawing from a Posterior Distribution
+
+```{r, post}
+#| cache: true
+#| results: hide
+priors <- brm(covid_deaths_diff | trials(Pop) ~ 
+                two_doses_percent + Trump_percent,
+              data = Gaba, 
+              family = binomial(link = "logit"),
+              prior = my_prior,
+              sample_prior = "only",
+              save_pars = save_pars(all = TRUE)) # check reasonable
+post <- update(priors, sample_prior = "no") # then condition on data
+```
+
+```{r}
+post
+```
+
+## Pareto $k$ Values
+
+```{r}
+#| warning: true
+plot(loo(post), label_points = TRUE)
+```
+
+## Some Influential Observations
+
+```{r}
+slice(Gaba, c(105, 230, 327, 364, 1314)) |> glimpse()
+```
+
+## Posterior Predictive Checks
+
+```{r}
+#| message: false
+library(ggplot2)
+loo_post <- loo(post, moment_match = TRUE, save_psis = TRUE)
+pp_check(post, type = "loo_intervals", order = "median") + 
+  scale_y_log10() + 
+  theme(legend.position = "none") # confidently wrong too often
+```
+
+## More Posterior Predictive Checks
+
+```{r}
+pp_check(post, type = "loo_pit_overlay")
+# too many predictions in the tails and not enough in the middle
+```
+
+## Beta-Binomial Model
+
+Can allow the probability of a covid death to be distributed Beta with expectation $\frac{1}{1 + e^{-\eta_n}}$ and concentration $\phi > 0$, which allows for overdispersion in the counts
+
+```{r, bb}
+#| cache: true
+post_bb <- update(post, family = beta_binomial, prior = 
+                    my_prior + prior(exponential(0.1), class = "phi"))
+loo_model_weights(post, post_bb, moment_match = TRUE)
+```
+
+## Better Calibration
+
+```{r}
+pp_check(post_bb, type = "loo_pit_overlay")
+```
+
+## Conclusion
+
+-   Can estimate the posterior distribution of a count model (or many other GLMs)
+-   Most post-estimation functions work after calling `brm`
+-   Except for linear models, no parameter can be interpreted in isolation of the other parameters and there may be strong posterior dependence between them
+-   We can always get posterior expectations or posterior predictions and use those to draw substantive conclusions in understandable units
+-   We can use LOO concepts for model comparison, model checking, and model weighting

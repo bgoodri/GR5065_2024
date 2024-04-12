@@ -1,0 +1,134 @@
+---
+title: "Recitation for Week10"
+author: "Apoorva Joshi"
+format:
+  revealjs:
+    embed-resources: true
+    self-contained-math: true
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Introduction
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   Supervised Learning is geared toward choosing a modeling procedure that predicts future (proxied by testing) data better than MLE by adding a penalty to the (-) log-likelihood
+-   Bayesians can also generate predictions of future data that are even better calibrated than Supervised Learning:
+    -   Bayesian propagate uncertainty in $\boldsymbol{\theta}$ through to $Y \mid \boldsymbol{\theta}$
+
+    -   Bayesians can use leave-one-out cross-validation (equivalent to $K$-fold with $K = N$ but can estimate the ELPD without refitting $N$ times) to choose among models
+
+## Okun's Law Revisited
+
+```{r}
+source(file.path("..", "Week07", "macroeconomic_data.R")) # do this!
+training <- filter(data, quarter_startdate >= "1970-01-01",
+                   quarter_startdate <= "1994-10-01")  # 99 quarters
+testing <- filter(data, quarter_startdate > "1994-10-01",
+                  quarter_startdate < "2019-10-01")    # 99 quarters
+```
+
+```{r}
+#| message: false
+library(rstanarm)
+options(mc.cores = parallel::detectCores())
+```
+
+```{r}
+post <- stan_glm(GDO ~ x, data = training, seed = 12345,
+                 prior_intercept = normal(3, 0.5), # on mu
+                 prior = normal(-2, 1),            # on beta
+                 prior_aux = exponential(0.5))     # on sigma
+coef(post) # posterior medians of 4000 estimates (not "the" estimate)
+apply(as.matrix(post), MARGIN = 2, FUN = mad) # not that small
+```
+
+With only $99$ observations in `training`, we cannot be certain about $\boldsymbol{\theta}$ in Okun's Law (`x` is the change in unemployment).
+
+## Expected Log Predictive Density
+
+$$\mbox{ELPD} = \sum_{n = 1}^N \int_\Omega \ln \int_\Theta f\left(y_{N + n} \mid \boldsymbol{\theta}\right) f\left(\boldsymbol{\theta} \mid \mathbf{y}\right) d\boldsymbol{\theta} dy_{N + n}$$
+
+```{r}
+log_lik_testing <- log_lik(post, newdata = testing) # 4000 x 99
+loo::elpd(log_lik_testing) # estimating the inner integral with draws
+```
+
+The estimate is of an expectation over $\boldsymbol{\theta}$ but is evaluated at the realized $N$ observations in the `testing` data. It does not take the expectation over future data that we haven't observed yet.
+
+## Estimated ELPD
+
+We can *estimate* the ELPD with $\sum\limits_{n = 1}^N \ln f\left(y_n \mid \mathbf{y}_{-n}\right)$, under an additional testable assumption (satisfied in this case) that none of the $N$ observations we conditioned on has an outsized influence on the posterior distribution.
+
+```{r}
+loo(post) # only utilizes training data, not testing
+```
+
+## Differences
+
+Why is $-216.2$ (`elpd`) different from $-235.7$ (`elpd_loo`)?
+
+. . .
+
+They are not actually that different because the (estimated) standard error of the difference between them is almost $11$. `elpd_loo` yields an (estimated) expectation over all ways that $99$ future observations could be drawn from a normal distribution implied by Okun's Law. `elpd(log_lik(post, newdata = testing))` only uses one of those ways that $99$ future observations could be drawn from a normal distribution implied by Okun's Law. Supervised learners see the latter is "genuine" and forget that past testing data is only a proxy for the unobserved future data they actually care about predicting.
+
+## What You Should Have Done
+
+Only using the `training` data in `stan_glm(GDO ~ x, data = training, …)` wasted the $99$ observations in `testing`, which makes our posterior uncertainty about $\boldsymbol{\theta}$ larger and our predictions of future GDO worse
+
+```{r}
+post <- update(post, data = data, # not separating training / testing
+               subset = quarter_startdate < "2020-01-01") # pre-covid
+(loo_post <- loo(post, save_psis = T)) # for 199 future observations
+```
+
+## Model Comparison
+
+```{r}
+AR1 <- stan_glm(GDO ~ lag(GDO), data = data, seed = 12345,
+                subset = quarter_startdate > "1970-01-01" &
+                  quarter_startdate < "2020-01-01",
+                 prior_intercept = normal(3, 0.5), # on mu
+                 prior = normal(0.5, 0.2),         # on beta
+                 prior_aux = exponential(0.5))     # on sigma
+loo_compare(loo(post), loo(AR1))
+```
+
+. . .
+
+Only using `lag(GDO)` from the previous quarter is expected to be much worse at predicting future `GDO` than is using only `x`, the change in unemployment during the current quarter (although you could use both). We reached that conclusion without wasting a good chunk of our data by separating `testing` from `training` like supervised learners do.
+
+## Model Checking with LOO Concepts
+
+```{r}
+pp_check(post, plotfun = "loo_intervals", # predictions worse in 1970s
+         psis_object = loo_post$psis_object) # than in later decades
+```
+
+## An Example of Decent Calibration
+
+```{r}
+pp_check(post, plotfun = "loo_pit_overlay", # too few tail predictions
+         psis_object = loo_post$psis_object) # but could be much worse
+```
+
+## Conclusion
+
+-   Supervised learning is not the only way to generate predictions for (future) data; just the most popular
+-   Supervised learning usually yields better point predictions than Frequentist point predictions (because of penalization) but does not yield a posterior predictive distribution
+-   All the things supervised learners do with (functions of) $\widehat{\boldsymbol{\theta}}$ can be done better with each MCMC draw from $\boldsymbol{\theta} \mid \mathbf{y}$
+-   Supervised learning splits into training and testing in order to compare models, but that is actively harmful in a Bayesian analysis so you should not do it
