@@ -1,0 +1,400 @@
+---
+title: "GR5065 HW4 Answer Key"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \pagenumbering{gobble}
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+    keep-tex: true
+editor: visual
+execute: 
+  echo: true
+---
+
+# Wages
+
+```{r}
+#| message: false
+library(dplyr)
+if (!any(list.files() == "ACS.zip")) {
+  ROOT <- "https://www2.census.gov/programs-surveys/acs/data/pums/2022/1-Year/"
+  FILE <- "csv_pct.zip" # Connecticut
+  download.file(paste0(ROOT, FILE), destfile = "ACS.zip")
+  unzip("ACS.zip")
+}
+ACS <- readr::read_csv(list.files(pattern = "csv$"), show_col_types = FALSE) |>  
+  filter(WAGP > 0) |> 
+  select(RT:WAOB) |>  
+  mutate(censored = WAGP == max(WAGP))
+```
+
+## Generative Model
+
+We utilize
+
+<https://en.wikipedia.org/wiki/Mincer_earnings_function>
+
+with a shift for women:
+
+```{r}
+ACS <- mutate(ACS,
+              SCHL = as.integer(SCHL),
+              SEX = SEX - 1L,
+              AGEP = AGEP / 10)
+X <- model.matrix(log(WAGP) ~ SCHL + SEX + AGEP + I(AGEP^2), 
+                  data = ACS)
+X <- X[ , -1] # drop intercept
+X <- sweep(X, MARGIN = 2, STATS = colMeans(X), FUN = `-`)
+```
+
+This generative model for potentially top-coded wages has almost the same structure as a survival model with censoring that we discussed in Week11, except with a normal likelihood:
+
+```{=tex}
+\begin{eqnarray*} 
+\forall n: y_n & \equiv & \begin{cases} y_{n}^{\ast} & \text{if }y_{n}^{\ast}<c\\ c & \text{if }y_{n}^{\ast}\geq c \end{cases} \\ 
+\forall n: y_n^\ast & \equiv & e^{\eta_n + \epsilon_n} \\ 
+\forall n: \epsilon_n & \thicksim & \mathcal{N}\left(0, \sigma\right) \\
+\sigma & \thicksim & \mathcal{E}\left(r\right) \\
+\forall n: \eta_n & \equiv & \gamma + \sum_{k = 1}^K \beta_{k} \left(x_{nk} - \overline{x}_k\right) \\ 
+\gamma & \thicksim & \mathcal{N}\left(m_0, s_0\right) \\ 
+\forall k: \beta_k & \thicksim & \mathcal{N}\left(m_k, s_k\right) 
+\end{eqnarray*}
+```
+To draw prior predictions, we can do
+
+```{r}
+m_0 <- log(40000) # about 10.6
+s_0 <- 0.5
+m <- c( 0.1, # SCHL
+       -0.2, # SEX (female)
+        0.1, # AGEP
+        0 )  # AGEP^2
+s <- c(rep(0.2, 3), 0.05)
+r <- 1
+
+c <- max(ACS$WAGP)
+R <- 1000
+
+priors <- tibble(
+  gamma  = rnorm(R, m_0, s_0),
+  beta_1 = rnorm(R, m[1], s[1]),
+  beta_2 = rnorm(R, m[2], s[2]),
+  beta_3 = rnorm(R, m[3], s[3]),
+  beta_4 = rnorm(R, m[4], s[4]),
+  sigma  = rexp(R, r)
+)
+predictions <- cross_join(priors, as.data.frame(X)) |> 
+  transmute(eta = gamma + beta_1 * SCHL + beta_2 * SEX +
+              beta_3 * AGEP + beta_4 * `I(AGEP^2)`,
+            epsilon = rnorm(n(), 0, sigma),
+            y_star = exp(eta + epsilon),
+            y = pmin(y_star, c))
+```
+
+```{r}
+#| message: false
+#| warning: false
+library(ggplot2)
+ggplot(predictions) +
+  geom_density(aes(y)) +
+  scale_x_log10(limits = c(1, c - 1)) +
+  labs(x = "Wages (in log units)")
+```
+
+This looks reasonable, although it took several tries to avoid having it be too spread out and right-skewed. It is still somewhat right-skewed but the median is a little over \$40,000. A small percentage of values are top-coded (although the percentage of top-coded values in the actual data is even smaller). It certainly does not look normal, but the model does not claim that the outcome is normal irrespective of the parameters (and predictors). The generative process clearly assumes that the errors (in log-units) are normal with mean zero and standard deviation $\sigma$. When we marginalize over $\sigma$, the errors have heavier tails, which contributes to the skew in predicted wages (in dollars).
+
+## Posterior Distribution
+
+```{r}
+#| message: false
+#| warning: false
+library(brms)
+options(mc.cores = parallel::detectCores())
+get_prior(log(WAGP) | cens(censored) ~ 
+            SCHL + SEX + AGEP + I(AGEP^2),
+          data = ACS,
+          family = gaussian)
+
+my_prior <- 
+  prior(normal(10.6, 0.5), class = "Intercept") +
+  prior(normal(0.1, 0.2),  class = "b", coef = "AGEP") +
+  prior(normal(0.0, 0.05), class = "b", coef = "IAGEPE2") +
+  prior(normal(0.1, 0.2),  class = "b", coef = "SCHL") +
+  prior(normal(-0.2, 0.2), class = "b", coef = "SEX") +
+  prior(exponential(1), class = "sigma")
+```
+
+```{r, post}
+#| cache: true
+#| message: false
+post <- brm(log(WAGP) | cens(censored) ~ 
+            SCHL + SEX + AGEP + I(AGEP^2),
+          data = ACS,
+          family = gaussian,
+          prior = my_prior)
+```
+
+Under our posterior distribution, females are expected to have lower wages than otherwise identical males, and we are essentially certain of this.
+
+```{r}
+hypothesis(post, "SEX < 0")
+```
+
+## Posterior Predictive Distribution
+
+```{r}
+avg_wages <- rowMeans(exp(posterior_predict(post)))
+tibble(avg_wages = avg_wages) |>
+  ggplot() +
+  geom_density(aes(avg_wages)) +
+  geom_vline(aes(xintercept = mean(ACS$WAGP)), color = "red") + 
+  xlim(75000, 125000) + 
+  labs(x = "Beliefs about Average Wages in Connecticut")
+```
+
+Average predicted wages including those people whose observed wages are top-coded in the `ACS` is much larger (and more uncertain) that whatever estimate you might obtain from the censored data. This selection mechanism not only affects the average, but also the variance and any measure of wage inequality.
+
+## Model Comparison
+
+In this case, ignoring the fact that the data are top-coded is expected to yield better predictions of $N$ future observations.
+
+```{r, no_censoring}
+#| cache: true
+#| message: false
+no_censoring <- update(post, formula. = log(WAGP) ~ SCHL + SEX + AGEP + I(AGEP^2))
+loo_compare(loo(post), loo(no_censoring))
+```
+
+This is presumably due to the fact that top-coding is so rare and that the exact value of the true wages that are top-coded is so uncertain that it is more trouble than it is worth to consider the true wages to be unknowns. However, here we can see the limitation of using the ELPD to choose between models; it only considers predictive ability. If your goal were to make some inference about averages wages or inequality rather than merely predicting log-wages of the bottom 99%, then your model would need to take the top-coding of wages into account.
+
+# Inflation Expectations
+
+```{r}
+ROOT <- "https://www.newyorkfed.org/medialibrary/Interactives/sce/sce/downloads/data/"
+FILE <- "frbny-sce-public-microdata-latest"
+download.file(paste0(ROOT, FILE), destfile = "SCE.xlsx")
+SCE <- readxl::read_excel("SCE.xlsx", skip = 1, progress = FALSE, guess_max = 100000) |> 
+  group_by(userid) |> 
+  slice_min(survey_date) |> # keep only the first time the person answered questions
+  ungroup()
+```
+
+```{r}
+SCE <- SCE |> 
+  transmute(y = Q8v2part2,
+            date = as.factor(date),
+            employment_status = 
+              case_when(Q10_1 == 1 ~ "full time",
+                        Q10_2 == 1 ~ "part time",
+                        Q10_3 == 1 ~ "unemployed",
+                        Q10_4 == 1 ~ "temporary",
+                        Q10_5 == 1 ~ "sick",
+                        Q10_6 == 1 ~ "unable",
+                        Q10_7 == 1 ~ "retired",
+                        Q10_8 == 1 ~ "student",
+                        Q10_9 == 1 ~ "homemaker",
+                        Q10_10 == 1 ~ "other",
+                        TRUE ~ NA_character_),
+            age = Q32 / 10, # in decades
+            male = factor(Q33, levels = 1:2, labels = c("Female", "Male")),
+            hispanic = factor(Q34, levels = 1:2, labels = c("Yes", "No")),
+            # SCE allows you to be more than one race so leave these as dummies
+            white = Q35_1,
+            black = Q35_2, 
+            aian = Q35_3,
+            asian = Q35_4,
+            pacific = Q35_5,
+            other = Q35_6,
+            education = factor(Q36, levels = 1:9,
+                               labels = c("Less than HS", "HS", 
+                                          "Some college", "Associate", "Bachelors",
+                                          "Masters", "Doctoral", "Professional",
+                                          "Other")),
+            married = factor(Q38, levels = 1:2, labels = c("Yes", "No")),
+            state = `_STATE`,
+            ownrent = factor(Q43, levels = 1:3, labels = c("Own", "Rent", "Other")),
+            income = factor(Q47, levels = 1:11),
+            region = `_REGION_CAT`) |> 
+  filter(age >= 1.8, age <= 10.0) |> # some people listed ages outside this
+  arrange(y)
+```
+
+## Generative Process
+
+```{=tex}
+\begin{eqnarray*} 
+\forall n: y_n &\equiv& \eta_n + \epsilon_n \\
+\forall n: \epsilon_n &\thicksim& \mathcal{N}\left(0, \frac{\sigma}{\sqrt{\tau_n}}\right) \\
+\sigma &\thicksim& \mathcal{E}\left(r_\sigma\right) \\
+\forall n: \tau_n &\thicksim& \mathcal{G}\left(\frac{\nu}{2}, \frac{\nu}{2}\right) \\
+\nu &\thicksim& \mathcal{E}\left(r_\nu\right) \\
+\forall n: \eta_n &\equiv& \alpha + \sum_{k = 1}^K \beta_k x_{nk} \\
+\alpha &\equiv& \mu - \sum_{k = 1}^K \beta_k \overline{x}_{k} \\
+\mu &\thicksim& \mathcal{N}\left(m_0, s_0\right) \\
+\forall k: \beta_k &\thicksim& \mathcal{N}\left(m_k, s_k\right)
+\end{eqnarray*}
+```
+```{r}
+#| warning: false
+R <- 100
+X <- model.matrix(y ~ age + male + education + married + ownrent + income + region +
+                    hispanic + white + black + aian + asian + pacific + other + date,
+                  data = SCE)[ , -1]
+x_bar <- colMeans(X)
+X <- sweep(X, MARGIN = 2, STATS = x_bar, FUN = `-`)
+priors <- purrr::map_dfc(x_bar, ~ {
+  rnorm(R, mean = 0, sd = 0.5)
+}) |> 
+  mutate(mu = rnorm(R, mean = 2.5, sd = 1.0),
+         nu = rexp(R, 0.2),
+         sigma = rexp(R, 0.1)) 
+predictions <- cross_join(x = priors, y = as_tibble(X)) |> 
+  transmute(eta = mu + # cross_join() added a .x or .y suffix
+              rowSums(pick(ends_with(".x")) * pick(ends_with(".y"))),
+            tau = rgamma(n(), shape = nu / 2, rate = nu / 2),
+            epsilon_G = rnorm(n(), mean = 0, sd = sigma / sqrt(tau)),
+            y_G = eta + epsilon_G,
+            epsilon_T = sigma * rt(n(), df = nu),
+            y_T = eta + epsilon_T)
+```
+
+As can be seen, the prior predictive distribution of `y_G` --- where the errors are Gaussian but heteroskedastic because the standard deviation $\frac{\sigma}{\sqrt{\tau_n}}$ is specific to the $n$-th observation --- is the same as the prior predictive distribution of `y_T` --- where the errors are homoskedastic and Student $t$ for all observations.
+
+```{r}
+#| warning: false
+ggplot(predictions) + 
+  geom_density(aes(y_G), color = "black") + 
+  geom_density(aes(y_T), color = "red", linetype = "dashed") + 
+  xlim(0, 100) + 
+  labs(x = "Prediction",
+       y = "Prior Density")
+```
+
+This equivalence supports the contention that if you analytically integrate each $\tau_n$ out of the posterior distribution, the likelihood is Student $t$ with $\nu$ degrees of freedom and scale $\sigma$. Consequently, we utilize that fact when conditioning on the data below.
+
+## Estimation
+
+```{r}
+my_prior <- prior(normal(2.5, 1.0), class = "Intercept") +
+  prior(normal(0, 0.5),  class = "b") + # used for all coefficients
+  prior(exponential(0.2), class = "nu") +
+  prior(exponential(0.1), class = "sigma")
+```
+
+```{r, SCE}
+#| cache: true
+#| results: hide
+post <- brm(y ~ age + male + education + married + ownrent + income + region +
+              hispanic + white + black + aian + asian + pacific + other + date,
+            data = SCE, 
+            family = student,
+            prior = my_prior)
+```
+
+As can be seen in a plot,
+
+```{r}
+plot(post, variable = "nu", combo = c("dens", "intervals"))
+```
+
+the marginal posterior density of $\nu$ is very concentrated near $1$, indicating that the errors are essentially distributed Cauchy.
+
+## Pareto $k$ Values
+
+```{r}
+plot(loo(post), label_points = TRUE)
+```
+
+With the heavy-tailed error distribution, none of the estimated Pareto $k$ values are large, which implies that no individual observation has an outsized effect on the posterior distribution. Of course, if you estimated a different model, you might obtain a different conclusion.
+
+Since all of the Pareto $k$ estimates are fine, we can use them to obtain a $R^2$ measure for a future observation
+
+```{r, loo_R2}
+#| cache: true
+loo_R2(post) 
+```
+
+that strongly implies that this model --- which only includes demographic predictors and time --- cannot explain the variation in inflation expectations at all.
+
+```{r}
+#| message: false
+#| warning: false
+pp_check(post, type = "loo_intervals", order = "median", alpha = 0.1) + 
+  ylim(-10, 100)
+```
+
+# Legal Analysis
+
+Rozenshtein [argues](https://www.lawfaremedia.org/article/there-is-no-general-first-amendment-right-to-distribute-machine-learning-model-weights) that "Code is sometimes speech, but only when it is used in a way analogous to other traditional forms of communication -- specifically, where the expressive function of the communication outweighs its functional role." Rozenshtein then gives an example of the following Python code to set up a neural network
+
+```{python}
+#| eval: false
+import tensorflow as tf
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(units=30, input_shape=(5,))
+])
+
+model.build()
+layer = model.layers[0]
+weights = layer.get_weights()[0]
+print(weights)
+```
+
+Rozenshtein seems to imply that the above Python code is speech that is protected by the first amendment to the U.S. constitution because as the Ninth Circuit opinion in the *Bernstein* case held "cryptographers use source code to express their scientific ideas in much the same way that mathematicians use equations or economists use graphs".
+
+In contrast, Rozenshtein argues that the output of the above code --- which is just a list of many numbers --- is not speech that is protected by the first amendment because "model weights are not generally used to express ideas among individuals but, rather, serve primarily as instructions to order machines to act, specifically to perform inference, the process of applying the model to a given input". It is not clear from the article whether Rozenshtein would consider the point predictions from a neural network to be speech that is protected by the first amendment but point predictions are easier to grasp by humans than are the model weights that generated them.
+
+Rozenshtein uses the word "inference" in the loosest possibly way to mean "prediction" but that is fairly commonplace among supervised learners. In addition, the model weights in a neural network are not themselves "instructions to order machines to act"; rather the code instructs the machine to multiply the predictors by the model weights, push the result through an activation function, and pass that to the next level of the neural network. Nevertheless, Rozenshtein is correct that model weights are not used to communicate ideas among humans and thus are perhaps more functional than expressive. The distinction is potentially important when considering whether the U.S. government can impose export controls on model weights.
+
+Rozenshtein does not specifically address the more direct situation where words are represented as vectors of numbers whose sizes are usually between 100 and 1000, such as in the [word2vec](https://en.wikipedia.org/wiki/Word2vec) algorithm. The similarity between two words can then be quantified by the cosine similarity, which is the dot product of the two vectors divided by the square roots of the sums of squares of the two vectors. Presumably Rozenshtein would argue that the text representation of the words is protected by the first amendment but the vector representation is not because the latter is not used to communicate ideas among humans.
+
+Admittedly, Rozenshtein lacks a necessary and / or sufficient condition for something to be expressive speech vs. functional non-speech. However, if model weights from a neural network were considered to be speech, then almost anything that conveys information about something would also have to be considered speech. Thus, it seems fairly reasonable for Rozenshtein to argue that the source code is a better candidate for first amendment protection than model weights.
+
+Nor does Rozenshtein specifically address Bayesian inference, but the $R$ draws from a posterior distribution are cosmetically similar to a long list of model weights in a neural network. Bayesians can even draw from the posterior distribution of weights in a neural network, in which case they would get $R$ sets of what Rozenshtein feels is non-speech. Thus, Rozenshtein would presumably argue that draws from a posterior distribution are not protected by the first amendment, even if the source code to obtain those draws is protected by the first amendment.
+
+In the context of the BioNTech / Pfizer vaccine, it is obvious that the first amendment gives someone the right to say in 2020 "I believe the FDA should approve this vaccine because the posterior distribution of $\theta$ is Beta with shape $a^\ast = a + y$ and $b^\ast = b + n - y$", where $a = 0.700102$, $b = 1$, $y = 8$, and $n = 94$, which implies a high level of vaccine effectiveness". In other words, the shape parameters to the posterior Beta distribution incorporate the experimental data, along with the prior values of $a$ and $b$. Rozenshtein even anticipates (and rejects) an argument that model weights are protected by the first amendment because they are akin to scientific data:
+
+> One might argue that the communication of model weights should still be protected under the First Amendment because the model weights are scientific data, which is similarly non-expressive (presumably reading the raw output of a seismograph or a DNA sequencer is as unilluminating as is reading model weights). And there is a sense in which model weights are a kind of highly compressed version of the underlying training data. But even if scientific data is protected under the principle that the First Amendment "protects works which, taken as a whole, have serious literary, artistic, political, or scientific value," it is nevertheless the case that the primary use of model weights is not as an abstract description of some underlying reality but, rather, as part of the instructions given to a computer to do something---namely, machine-learning inference.
+
+In the Bayesian context, the sufficient statistics $a^\ast$ and $b^\ast$ are not merely instructions given to a computer (to do something like predict the number of covid cases if the vaccine were made available to all adults) but rather characterize the speaker's beliefs about an aspect of reality: $$\theta = \frac{\Pr\left(\text{covid} \mid \text{vaccinated}\right)}{\Pr\left(\text{covid} \mid \text{vaccinated}\right) + \Pr\left(\text{covid} \mid \text{unvaccinated}\right)}.$$
+
+If the first amendment gives someone the right to say "I believe the FDA should approve this vaccine because the posterior distribution of $\theta$ is Beta with shapes $a^\ast$ and $b^\ast$", then how could the first amendment not protect the right of someone to say "I believe the FDA should approve this vaccine because the posterior density of $\theta$ can be graphed as
+
+```{r}
+#| echo: false
+tibble(theta  = rbeta(10^7, shape1 = 0.700102 + 8, shape2 = 1 + 94 - 8)) |> 
+  ggplot() + 
+  geom_density(aes(x = theta))
+```
+
+where the above plot was constructed from $R$ draws from a Beta distribution with shapes $a^\ast$ and $b^\ast$? Those draws were Monte Carlo rather than Markov Chain Monte Carlo, but the plot would look the same if it were constructed from MCMC draws from that posterior distribution using the following Stan program
+
+```{stan, output.var = "vaccine", eval = FALSE}
+data {
+  int<lower = 0> n;
+  int<lower = 0, upper = n> y;
+  real<lower = 0> a;
+  real<lower = 0> b;
+}
+parameters {
+  real<lower = 0, upper = 1> theta;
+}
+model {
+  target += beta_lpdf(theta | a, b);
+  target += binomial_lpmf(y | n, theta);
+}
+generated quantities {
+  real VE = (1 - 2 * theta) / (1 - theta);
+}
+```
+
+Perhaps Rozenshtein would allow that if parameters are interpretable then either posterior draws or point estimates of them could be considered speech that is protected by the first amendment. However, interpretability is a matter of degree. Even if the vaccine example, although $\theta$ is interpretable, the FDA is only interested in $\theta$ because it determines $\text{VE}\left(\theta\right) = 1 - \frac{\Pr\left(\text{covid} \mid \text{vaccinated}\right)}{\Pr\left(\text{covid} \mid \text{unvaccinated}\right)}$. But it would seem difficult to argue that `VE` is speech but $\theta$ is not when the reason you believe that vaccine effectiveness is high is because $\theta$ is low.
+
+Although Rozenshtein does not explicitly state so, perhaps he means that individual model weights are not interpretable in isolation from the other model weights, unlike $\theta$ which is the only parameter in the model. However, U.S. courts are unlikely to buy that distinction because individual words are not unambiguously interpretable in isolation from the other words in a sentence and yet the sentence as a whole would ordinarily be considered speech that is protected by the first amendment.
+
+Ultimately, Rozenshtein --- like many other supervised learners --- does not feel that neural networks are simplified representations of reality or particularly meaningful; they are just functional devices that generate predictions in the testing data. And that perspective is starkly at odds with how Bayesians view their posterior distributions as beliefs about unknowns conditional on what they do know, which also imply a predictive distribution for future data. If posterior distributions are genuine beliefs of the researcher, then the first amendment has to protect them or else how can it protect your right to express your beliefs about abortion, the Middle East, etc.?
