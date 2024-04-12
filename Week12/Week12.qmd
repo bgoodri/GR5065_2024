@@ -1,0 +1,355 @@
+---
+title: "Models with Ordinal Variables Using the brms R Package"
+author: "Ben Goodrich"
+format: revealjs
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Obligatory Disclosure
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+## Obama vs. Romney in $2012$
+
+```{r}
+library(dplyr)
+poll <- readRDS(file.path("..", "Week09", "GooglePoll.rds"))
+poll_grouped <- na.omit(poll) |> 
+  mutate(Urban_Density = 
+           factor(Urban_Density, ordered = TRUE,
+                  levels = c("Rural", "Suburban", "Urban"))) |> 
+  group_by(Gender, Age, Urban_Density, Income, Region) |> 
+  summarize(Obama = sum(grepl("Obama", WantToWin)),
+            observations = n(),
+            .groups = "drop") 
+```
+
+. . .
+
+-   The social sciences have a lot of ordinal variables
+
+-   The `Age` and `Income` variables are ordered factors and `Urban_Density` arguably is too in this context
+
+-   In many situations, you may want to assume that the effect of an ordinal variable on $\eta_n$ (and $\mu_n$) in a GLM is monotonic
+
+## Dirichlet Distribution
+
+-   Dirichlet distribution is over the parameter space of PMFs --- i.e. $\pi_k \geq 0$ and $\sum_{k = 1}^K \pi_k = 1$ --- and the Dirichlet PDF is $f\left(\boldsymbol{\pi} \mid \boldsymbol{\alpha}\right) = \frac{\Gamma\left(\prod\limits_{k=1}^{K}\alpha_{k}\right)}{\prod\limits_{k=1}^{K}\Gamma\left(\alpha_{k}\right)}\prod\limits_{k=1}^{K}\pi_{k}^{\alpha_{k}-1}$ where $\alpha_{k}\geq0\,\forall k$
+-   $\mathbb{E}\pi_{i}=\frac{\alpha_{i}}{\sum\limits_{k=1}^{K}\alpha_{k}}\,\forall i$ and the mode of $\pi_{i}$ is $\frac{\alpha_{i}-1}{-1+\sum\limits_{k=1}^{K}\alpha_{k}}$ if $\alpha_{i}>1$
+-   Iff $\alpha_{k}=1\,\forall k$, $f\left(\left.\boldsymbol{\pi}\right|\boldsymbol{\alpha}=\mathbf{1}\right)$ is constant over $\Theta$ (simplexes)
+-   Beta distribution is a special case of the Dirichlet for $K = 2$
+-   If $\boldsymbol{\pi}$ is Dirichlet, then $\boldsymbol{\theta}$ is increasing where $\theta_k = \sum_{j = 1}^k \pi_j$
+
+## Binomial Model with Monotonic Priors
+
+::: columns
+::: {.column width="50%"}
+Math Notation $\begin{eqnarray*} \forall n: y_n & \thicksim & \mathcal B\left(\mbox{trials}_n, F\left(\eta_n\right)\right) \\ \forall n: \eta_n & \equiv & \gamma + \\ & & \sum_{k = 1}^K \beta_k \left(x_{nk} - \overline{x}_k\right) \\ \gamma & \thicksim & \mathcal{N}\left(m_0, s_0\right) \\ \forall k: \beta_k & \equiv & \frac{\lambda}{K} \sum_{j = 1}^k \pi_j \\ \boldsymbol{\pi} & \thicksim & \mathcal{D}\left(\mathbf{a}\right) \\ \lambda & \thicksim & \mathcal{N}\left(m_1, s_1\right) \end{eqnarray*}$
+:::
+
+::: {.column width="50%"}
+::: fragment
+Code to Draw Parameters
+
+```{r}
+m_0 <- qlogis(0.5); s_0 <- 0.2
+m_1 <- 1.5; s_1 <- 0.75; a <- 1
+R <- 1000; priors <- tibble(
+  gamma  = rnorm(R, m_0, s_0),
+  lambda = rnorm(R, m_1, s_1),
+  # this yields a Dirichlet
+  chi_1 = rgamma(R, shape = a),
+  chi_2 = rgamma(R, shape = a),
+  chi_3 = rgamma(R, shape = a),
+  denom = chi_1 + chi_2 + chi_3,
+  pi_1 = chi_1 / denom,
+  pi_2 = chi_2 / denom,
+  pi_3 = chi_3 / denom,
+  beta_1 = lambda * pi_1 / 3,
+  beta_2 = lambda * 
+    (pi_1 + pi_2) / 3,
+  beta_3 = lambda * 1 / 3
+)
+```
+
+How would you draw $Y$?
+:::
+:::
+:::
+
+## Prior Predictive Distribution
+
+```{r}
+#| fig-show: hide
+library(ggplot2)
+X <- model.matrix(cbind(Obama, Romney = observations - Obama) ~ 
+                    -1 + Urban_Density, 
+                  data = poll_grouped, 
+                  family = binomial(link = "logit"))
+X <- sweep(X, MARGIN = 2, STATS = colMeans(X), FUN = `-`)
+
+predictions <- cross_join(priors, as_tibble(X)) |> 
+  transmute(eta = gamma + beta_1 * Urban_DensityRural + 
+              beta_2 * Urban_DensitySuburban + 
+              beta_3 * Urban_DensityUrban,
+            mu = plogis(eta),
+            y = rbinom(n(), prob = mu,
+                       size = poll_grouped$observations))
+
+ggplot(predictions) + # plot on next slide
+  geom_boxplot(aes(x = rep(poll_grouped$Urban_Density, times = R),
+                   y = mu)) +
+  labs(x = "",
+       y = "mu")
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+ggplot(predictions) + 
+  geom_boxplot(aes(x = rep(poll_grouped$Urban_Density, times = R), 
+                   y = mu)) + 
+  labs(x = "",
+       y = "mu")
+```
+
+## Default Priors (do not use)
+
+```{r}
+library(brms)
+get_prior(Obama | trials(observations) ~ Gender + Region +
+            mo(Age) + mo(Urban_Density) + mo(Income),
+          data = poll_grouped, 
+          family = binomial(link = "logit")) |> 
+  as_tibble() |> 
+  select(1:3)
+```
+
+## Good Priors
+
+```{r}
+my_prior <- prior(normal(0, 0.2), class = "Intercept") +
+  prior(normal(-0.5, 0.25), class = "b", coef = "GenderMale") +
+  prior(normal(-0.25, 0.1), class = "b", coef = "moAge") +
+  prior(normal(-0.25, 0.1), class = "b", coef = "moIncome") +
+  prior(normal(1.5, 0.75),  class = "b", coef = "moUrban_Density") +
+  prior(normal( 0.5, 0.25), class = "b", coef = "RegionNORTHEAST") +
+  prior(normal(-0.5, 0.25), class = "b", coef = "RegionSOUTH") +
+  prior(normal( 0.5, 0.25), class = "b", coef = "RegionWEST")
+
+options(mc.cores = parallel::detectCores())
+```
+
+```{r, post}
+#| cache: true
+#| results: hide
+post <- brm(Obama | trials(observations) ~ Gender + Region +
+              mo(Age) + mo(Urban_Density) + mo(Income),
+            data = poll_grouped, 
+            family = binomial(link = "logit"), 
+            prior = my_prior)
+```
+
+```{r}
+#| fig-show: hide
+bayesplot::mcmc_areas(post, regex_pars = "mo") # plot on next slide
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+bayesplot::mcmc_areas(post, regex_pars = "mo")
+```
+
+## Visualization
+
+```{r}
+mu <- plogis(posterior_linpred(post)) # 4000 x N matrix
+tibble(mu = c(mu), Urban_Density = 
+       rep(poll_grouped$Urban_Density, each = 4000)) |> 
+ggplot() + geom_boxplot(aes(x = Urban_Density, y = mu))
+```
+
+## Effect of Age Plot
+
+```{r}
+plot(conditional_effects(post, effects = "Age"))
+```
+
+## Posterior Predictive Check
+
+```{r}
+pp_check(post, type = "loo_pit_overlay")
+```
+
+## Model with Interval Censoring {.smaller}
+
+Suppose the outcome is "What is your income range?"
+
+::: columns
+::: {.column width="42%"}
+Math Notation $\begin{eqnarray*} \forall n: y_n & \equiv & \begin{cases} 1 & \text{if }y_{n}^{\ast} < c_1 \\ 2 & \text{if } c_1 \leq y_{n}^{\ast} \leq c_2 \\ \dots & \\ J & \text{if } y_{n}^{\ast} > c_{J - 1}\end{cases} \\ \forall n: y_n^\ast & \equiv & e^{\eta_n + \epsilon_n} \\ \forall n: \epsilon_n & \thicksim & \mathcal{N}\left(0,\sigma\right) \\ \sigma & \thicksim & \mathcal{E}\left(r\right) \\ \forall n: \eta_n & \equiv & \gamma + \sum_{k = 1}^K \beta_{k} \left(x_{nk} - \overline{x}_k\right) \\ \gamma & \thicksim & \mathcal{N}\left(m_0, s_0\right) \\ \forall k: \beta_k & \thicksim & \mathcal{N}\left(m_k, s_k\right) \end{eqnarray*}$
+:::
+
+::: {.column width="58%"}
+::: fragment
+Code to Draw Outcomes
+
+```{r}
+#| eval: false
+R <- 1000
+m0 <- log(50000)
+s0 <- 2 
+m <- 0
+s <- 2
+r <- 3
+c <- 1000 * c(10, 30, 60, 100, 200)
+# c is known from the question wording
+priors <- tibble(
+  gamma = rnorm(R, m0, s0),
+  beta  = rnorm(R, m, s),
+  sigma = rexp(R, r)
+)
+predictions <- cross_join(priors, data) |> 
+  transmute( # x is centered
+    eta = gamma + beta * x,
+    epsilon = rnorm(n(), 0, sigma),
+    y_star = exp(eta + epsilon),
+    y = cut(y_star, 
+            breaks = c, 
+            ordered_result = TRUE))
+```
+:::
+:::
+:::
+
+## Log-likelihood with Interval Censoring
+
+-   We only observe income ranges so $$\ell\left(\gamma, \beta, \sigma; \mathbf{y}\right) = \sum_{n = 1}^N \ln \Pr\left(c_{y - 1} \leq y_n^\ast \leq c_{y} \mid \eta_n, \sigma\right) = \\
+    \sum_{n = 1}^N \ln \left(F\left(c_y \mid \eta_n, \sigma\right) - F\left(c_{y - 1} \mid \eta_n, \sigma\right)\right)$$ where $F$ is normal CDF and $c_0 \equiv 0$ and $c_{J} = \infty$
+
+## Proportional Odds Ordinal Model {.smaller}
+
+Suppose the outcome is "How much do you approve of Biden?"
+
+::: columns
+::: {.column width="42%"}
+Math Notation $\begin{eqnarray*} \forall n: y_n & \equiv & \begin{cases} 1 & \text{if }y_{n}^{\ast} < \zeta_1 \\ 2 & \text{if } \zeta_1 \leq y_{n}^{\ast} \leq \zeta_2 \\ \dots & \\ J & \text{if } y_{n}^{\ast} > \zeta_{J - 1}\end{cases} \\ \forall j: \zeta_j & \thicksim & \mathcal{N}\left(m_j,s_j\right) \\ \forall n: y_n^\ast & \equiv & \eta_n + \epsilon_n \\ \forall n: \epsilon_n & \thicksim & \mathcal{N}\left(0,1\right) \text{ or } \mathcal{L}\left(0,1\right) \\ \forall n: \eta_n & \equiv & 0 + \sum_{k = 1}^K \beta_{k} \left(x_{nk} - \overline{x}_k\right) \\ \forall k: \beta_k & \thicksim & \mathcal{N}\left(m_k, s_k\right) \end{eqnarray*}$
+:::
+
+::: {.column width="58%"}
+::: fragment
+Code to Draw Outcomes
+
+```{r}
+#| eval: false
+R <- 1000
+m0 <- 0
+s0 <- 1 
+m <- 0
+s <- 2
+priors <- tibble(
+  beta  = rnorm(R, m, s),
+  # rstanarm::stan_polr has a different default prior
+  zeta_1 = rnorm(R, m0, s0),
+  zeta_2 = pmin(zeta_1, rnorm(R, m0, s0)),
+  zeta_3 = pmin(zeta_1, rnorm(R, m0, s0)),
+  zeta_4 = pmin(zeta_3, rnorm(R, m0, s0))
+)
+predictions <- cross_join(priors, data) |> 
+  transmute( # x is centered
+    epsilon = rnorm(n()),
+    eta = beta * x,
+    y_star = eta + epsilon) |> 
+  rowwise() |> 
+    y = cut(y_star, 
+            breaks = c(zeta_1, zeta_2,
+                       zeta_3, zeta_4),
+            ordered_result = TRUE) |> 
+  ungroup()
+```
+:::
+:::
+:::
+
+## Priors
+
+```{r}
+data("inhaler", package = "brms")
+colnames(inhaler)
+inhaler <- mutate(inhaler, rating = as.ordered(rating),
+                  treat = as.factor(treat > 0))
+get_prior(rating ~ treat + period + carry, data = inhaler, 
+          family = cumulative(link = "probit")) |> 
+  as_tibble() |> 
+  select(1:3) # brms refers to the cutpoints as Intercepts
+```
+
+And the default priors are especially bad
+
+## Posterior
+
+```{r, probit}
+#| cache: true
+#| results: hide
+post <- brm(rating ~ treat + period + carry, data = inhaler, 
+            family = cumulative(link = "probit"),
+            prior = prior(normal(0, 0.5), class = "b") +
+              prior(normal(0, 1), class = "Intercept"))
+```
+
+```{r}
+post
+```
+
+## Visualizing Treatment Effects
+
+```{r}
+plot(conditional_effects(post, "treat", categorical = TRUE))
+```
+
+## Stopping Ratio Models
+
+-   In a "proportional odds" model, $\eta_n = \ln \frac{\Pr\left(y_n \geq j\right)}{\Pr\left(y_n < j\right)} \forall j$
+
+-   Suppose the outcome is "What is your highest educational degree?" The probability that someone answers "college graduate" is the probability that they graduate from college *and* do not have a graduate degree.
+
+-   In a "stopping ratio" model, $\eta_n = \ln \frac{\Pr\left(y_n = j\right)}{\Pr\left(y_n > j\right)}$
+
+-   You could choose between models based on the ELPD
+
+## Estimating a Stopping Ratio Model
+
+```{r, post_sr}
+#| cache: true
+#| results: hide
+post_sr <- update(post, family = sratio)
+```
+
+```{r}
+post_sr
+loo_compare(loo(post), loo(post_sr)) # little difference
+```
+
