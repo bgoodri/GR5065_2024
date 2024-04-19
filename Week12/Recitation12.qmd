@@ -1,0 +1,165 @@
+---
+title: "Recitation for Week12"
+author: "Apoorva Joshi"
+format:
+  revealjs:
+    embed-resources: true
+    self-contained-math: true
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Introduction
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   We are going to consider one example from "Ordinal Regression Models in Psychology: A Tutorial". See <https://psyarxiv.com/x8swp/> and <https://osf.io/cu8jv/>.
+-   That paper actually considers three different generative processes for ordinal outcomes; we are only going to do one but you could use ELPD to decide which approach is best with a particular dataset
+-   We are also going to utilize a monotonic construction on one of the predictors
+
+## Data on Stem Cell Research
+
+```{r}
+library(dplyr)
+stemcell <- readr::read_csv("https://osf.io/download/vxw73/") |> 
+  mutate(belief = factor(belief, ordered = TRUE, levels = 
+                         c("fundamentalist", "moderate", "liberal")),
+         rating = factor(rating, levels = 4:1, ordered = TRUE,
+                         labels = c("definitely not", "probably not",
+                                    "probably", "definitely")))
+X <- model.matrix(rating ~ gender + belief, data = stemcell)
+X <- X[ , -1] # drop (Intercept) that is included by default
+# subtract average from each of the 4 columns
+X <- sweep(X, MARGIN = 2, STATS = colMeans(X), FUN = `-`)
+colnames(X)
+```
+
+-   `rating` is the ordinal outcome and has four categories so you need three cutpoints (which brms calls intercepts)
+
+-   `belief` is an ordinal predictor and has three categories, so the baseline (fundamentalist) is excluded
+
+## Ordinal Model with Ordinal Predictor {.smaller}
+
+$\begin{eqnarray*} \forall n: y_n & \equiv & \begin{cases} 1 & \text{if }y_{n}^{\ast} < \zeta_1 \\ 2 & \text{if } \zeta_1 \leq y_{n}^{\ast} \leq \zeta_2 \\ 3 & \text{if } \zeta_2 \leq y_{n}^{\ast} \leq \zeta_3 \\ 4 & \text{if } y_{n}^{\ast} > \zeta_3\end{cases} \\ \forall j: \zeta_j - \zeta_{j - 1} & \thicksim & \mathcal{N}_+\left(m_j,s_j\right) \\ \forall n: y_n^\ast & \equiv & \eta_n + \epsilon_n \\ \forall n: \epsilon_n & \thicksim & \mathcal{L}\left(0,1\right) \\ \forall n: \eta_n & \equiv & \theta \text{ gender}_n + \beta_1 \text{ moderate}_n + \beta_2 \text{ liberal}_n \\ \theta & \thicksim & \mathcal{N}\left(m_t, s_t\right) \\ \beta_1 & \equiv & \frac{\lambda}{2} \pi_1 \\ \beta_2 & \equiv & \frac{\lambda}{2} \times 1 \\ \lambda & \thicksim & \mathcal{N}\left(m_l, s_l\right) \\ \pi_1 & \thicksim & \mathcal{B}\left(a_1, a_2\right) \end{eqnarray*}$
+
+. . .
+
+How would you draw the parameters from the prior in R?
+
+## Drawing the Parameters
+
+```{r}
+R <- 1000
+priors <- tibble(
+  pi_1   = rbeta(R, 1, 1),
+  lambda = rnorm(R, 0.25, 0.5),
+  beta_1 = lambda / 2 * pi_1,
+  beta_2 = lambda / 2,# pi_1 + pi_2 = 1, so there is no pi_2 
+  theta  = rnorm(R, -0.1, 0.5),
+  zeta_1 = rnorm(R),
+  zeta_2 = zeta_1 + abs(rnorm(R)),
+  zeta_3 = zeta_2 + abs(rnorm(R))
+)
+```
+
+. . .
+
+How would you draw the outcomes?
+
+## Drawing the Outcomes
+
+```{r}
+predictions <- cross_join(as_tibble(X), priors) |> 
+  mutate(eta = theta * gendermale + beta_1 * belief.Q + 
+           beta_2 * belief.L,
+         epsilon = rlogis(n()),
+         ystar = eta + epsilon) |> 
+  rowwise() |>   
+  mutate(y = cut(ystar, labels = FALSE, ordered_result = TRUE,
+                 breaks = c(-Inf, zeta_1, zeta_2, zeta_3, Inf))) |> 
+  ungroup()
+select(predictions, eta:y)
+```
+
+## Checking the Prior Predictions
+
+```{r}
+library(ggplot2)
+ggplot(predictions) + geom_density(aes(ystar)) + facet_wrap(~y) + xlim(-5,5)
+```
+
+## Default Priors (do not use)
+
+```{r}
+library(brms)
+options(mc.cores = parallel::detectCores())
+get_prior(rating ~ gender + mo(belief), 
+          data = stemcell, family = cumulative) |> 
+  as_tibble() |> 
+  select(prior, class, coef)
+```
+
+. . .
+
+How would you specify better priors?
+
+## Better Priors
+
+```{r}
+my_prior <- 
+  prior(normal(-0.1, 0.5), class = "b", coef = "gendermale") +
+  prior(normal(0.25, 0.5), class = "b", coef = "mobelief") +
+  prior(normal(0, 1), class = "Intercept")
+  # default Dirichlet prior is fine for mobelief1
+  # it is Beta(1,1) in the case where there are only three categories
+```
+
+## Posterior Distribution
+
+```{r, post}
+#| cache: true
+#| results: hide
+ post <- brm(rating ~ gender + mo(belief), 
+             data = stemcell, family = cumulative, prior = my_prior)
+```
+
+```{r}
+post # doesn't tell you that much because units are those of y*
+```
+
+## Visualization
+
+```{r}
+plot(conditional_effects(post, "belief"), categorical = TRUE)
+```
+
+## Expectations
+
+```{r}
+df <- tidyr::expand_grid(gender = c("female", "male"),
+                         belief = levels(stemcell$belief))
+pi <- posterior_epred(post, newdata = df)
+str(pi) # for each row and column, the four probabilities sum to 1
+bind_cols(df, apply(pi, MARGIN = 2:3, FUN = mean))
+```
+
+## Conclusion
+
+-   Ordinal variables are very common in psychology and the rest of the social sciences
+-   brms has a lot of functionality for ordinal variables
+-   Yet you will still see a lot of people treating ordinal variables as if they were numeric
+-   Ordinal variables is one area where supervised learning is fairly underdeveloped
+-   See <https://psyarxiv.com/x8swp/> for more information
