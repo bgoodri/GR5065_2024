@@ -1,0 +1,156 @@
+---
+title: "GR5065 HW5"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \pagenumbering{gobble}
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+    keep-tex: true
+editor: visual
+execute: 
+  echo: true
+---
+
+# Splines
+
+Read this [paper](https://doi-org.ezproxy.cul.columbia.edu/10.1111/ecpo.12204) (including the appendices) by Ornstein, Hays, and Franzese, which investigates the "interest rate premium", which is the difference in the price that investors are willing to pay for government bonds that have not matured yet depending on whether their voters elect a left-leaning or right-leaning coalition (or perhaps have an absolute majority in their parliament). Actually, their outcome variable is operationalized in terms of interest rates, but those tend to be inversely related to bond prices.
+
+In most European countries, the Prime Minister is not elected separately from the legislative elections (like the President in the United States is). Rather, the party that wins the most seats in parliament gets the first opportunity to "form a government", often by partnering with other parties to obtain a working majority. Recently, we have seen such elections in Italy, the Netherlands, Poland, etc. The question the authors address is how bond prices are affected by the outcome of the election, particularly when the election is thought to be close and thus there is considerable uncertainty about whether a left-leaning party or a right-leaning party will lead the government. To answer that question, the authors utilize a so-called "regression discontinuity design" (RDD, not to be confused with "random digit dialing").
+
+The data used in the paper can be downloaded via
+
+```{r}
+ROOT <- "https://github.com/joeornstein/"
+FILE <- "left-parliament-rd/archive/refs/heads/master.zip"
+if (!file.exists("replication.zip")) {
+  download.file(paste0(ROOT, FILE), destfile = "replication.zip", quiet = TRUE)
+}
+unzip("replication.zip")
+```
+
+and loaded into R via
+
+```{r}
+#| message: false
+library(dplyr)
+elections <- readr::read_csv(file.path("left-parliament-rd-master", "data", 
+                                       "IntRateCostSocDem_dataset_v2_1.csv"),
+                             show_col_types = FALSE) |> 
+  filter(country_name != "Switzerland") |> 
+  mutate(bond.market.response = bond.yield.tplus1 - bond.yield.t,
+         leftPlurality = as.factor(leftPluralityPercentage > 0)) |> 
+  filter(!is.na(bond.market.response)) |> 
+  arrange(enpp)
+```
+
+Note that the outcome variable, `bond.market.response`, is defined as the difference in bond yields before and after the election. The treatment variable is `leftPlurality`, which is defined as the event that the `leftPluralityPercentage` (which is actually a proportion) is positive.
+
+There is code in the `left-parliament-rd-master/R` directory to replicate all the figures in the paper, but the essence of the authors' argument in the left panel of Figure 4 can be recreated via
+
+```{r}
+#| message: false
+#| warning: false
+library(ggplot2)
+ggplot() + 
+  geom_point(aes(x = leftPluralityPercentage,
+                 y = bond.market.response, 
+                 color = leftPlurality), 
+             data = subset(elections, enpp < 3.5),
+             alpha = 0.5,
+             show.legend = FALSE) +   
+  geom_smooth(aes(x = leftPluralityPercentage, 
+                  y = bond.market.response), 
+              data = subset(elections, enpp < 3.5 & leftPlurality == "FALSE"),
+              color = "#F8766D") + 
+  geom_smooth(aes(x = leftPluralityPercentage, 
+                  y = bond.market.response), 
+              data = subset(elections, enpp < 3.5 & leftPlurality == "TRUE"),
+              color = "#00BFC4")
+```
+
+It appears from the above plot that --- when the "effective number of parties" (`enpp`) is less than $3.5$ --- the response of the bond market to the election has a discontinuity at zero, which is the threshold at which the left-leaning party in a country has the first opportunity to form a coalition government (if the do not have an absolute majority of seats in parliament). The difference in the function in the limit as `leftPluralityPercentage` approaches zero from the right and as it approaches zero from the left is an estimate of the "interest rate premium" for coalitions lead by left-leaning parties.
+
+## Estimation
+
+The paper uses the `rdrobust` function in the rdrobust R package, which is referred to as the "current state-of-the-art practice", by which they mean current state-of-the art Frequentist practice. This point estimator is rather complicated, and it is difficult to interpret anything besides its point estimates because the observations are not a random sample from any well-defined population.
+
+Use the `brm` function in the brms package to estimate a regression (discontinuity) model where
+
+-   `formula` is `bond.market.response ~ s(leftPluralityPercentage, by = leftPlurality)` , which will actually estimate a separate spline on each side of the discontinuity but the hierarchical structure weakly implies that the two splines are not too dissimilar *a priori*
+
+-   `data` is `filter(elections, enpp < 3.5)`
+
+-   `family` is `gaussian`
+
+-   `save_pars` is `save_pars(all = TRUE)`
+
+The `brm` function is slightly different from `rstanarm::stan_gamm4` in that the former pulls the linear basis function out of the spline and estimates its coefficient without any hierarchical structure, while putting a normal prior --- with expectation zero and unknown standard deviation (which is called `sds` by brms) --- on the weights of the other basis functions that induce the nonlinear behavior. You will need to choose reasonable non-default priors for all the parameters in the model, and in addition, you should make sure there are no divergent transitions.
+
+## Evaluation
+
+-   Plot what brms calls the `conditional_effects` of the model in the previous subproblem.
+
+-   Explain how this is or is not consistent with the left panel of the authors' Figure 4.
+
+-   Use the `posterior_epred` function to estimate the posterior distribution of the treatment effect of crossing the threshold at zero by creating a new data.frame with just two rows: one where `leftPluralityPercentage` is zero but `leftPlurality` is "TRUE" and another where `leftPluralityPercentage` is zero and `leftPlurality` is "FALSE". The difference between these two scenarios is the posterior distribution of the treatment effect. How would you describe this distribution?
+
+## Pareto $k$ Estimates
+
+Use the `loo` function to estimate the ELPD via PSISLOOCV. Which, if any, observations have sufficiently large Pareto $k$ estimates to invalidate the PSISLOOCV estimator of the ELPD (which can be rectified rather easily by passing `reloo = TRUE` to `loo`) and to what extent do you think such observations call into question you posterior beliefs about the treatment effect?
+
+## Criticism
+
+One of Andrew Gelman's many pet peeves is regression discontinuity designs, particularly those that only involve the forcing / running variable (which in this case is `leftPluralityPercentage`. Read this blog [post](https://statmodeling.stat.columbia.edu/2021/03/11/regression-discontinuity-analysis-is-often-a-disaster-so-what-should-you-do-instead-do-we-just-give-up-on-the-whole-natural-experiment-idea-heres-my-recommendation/) for a summary of his position.
+
+-   To what extent to you think the arguments in Gelman's blog post are applicable to the paper by Ornstein, Hays, and Franzese?
+
+-   How do you think Ornstein, Hays, and Franzese would respond?
+
+-   What do you think would be the most appropriate model to fit with `brm` to estimate the treatment effect of `leftPluralityPercentage` crossing the threshold at zero and what prior distributions would you choose for the parameters?
+
+# Multilevel Model
+
+Starting on April 23, 2020, the US government conducting rapid-response surveys in response to the covid pandemic. The data from the first such survey can be downloaded via
+
+```{r}
+ROOT <- "https://www2.census.gov/programs-surveys/demo/datasets/hhp/2020/wk1/"
+FILE <- "HPS_Week01_PUF_SAS.zip"
+if (!file.exists(FILE)) {
+  download.file(paste0(ROOT, FILE), destfile = FILE, quiet = TRUE)
+}
+unzip(FILE)
+```
+
+Unzipping the file that you downloaded will create the dataset (in SAS format, due to the interest of public health researchers in these data) and a data dictionary spreadsheet that you may want to open in a separate application to see how the responses were coded. The questionnaire can also be read in PDF format [here](https://www2.census.gov/programs-surveys/demo/technical-documentation/hhp/household-pulse-survey-questionnaire-week1-5.pdf).
+
+The dataset can be loaded into R via
+
+```{r}
+pulse <- haven::read_sas("pulse2020_puf_01.sas7bdat")
+```
+
+Analyze the `pulse` data by drawing from the posterior distribution of one or more models of an ordinal outcome variable of your choosing that is predicted by at least one ordinal predictor using the `mo`(notonic) construction in `brm`. You can, and presumably should, utilize other predictors as well.
+
+What substantive conclusions do you draw from your analysis, and why should a potential audience feel as if your preferred model is reasonably appropriate and fits the data at least decently well?
+
+# Jury Selection
+
+Criminal trials in the United States are typically decided by juries who are composed of a handful of citizens that live in the area where the crime is alleged to have been committed. In order to reach a guilty verdict, all the jurors must agree that the defendant committed the crime in question "beyond reasonable doubt", which is not precisely defined but is widely held to mean something weaker than "no doubt". If some of the jurors believe that the defendant committed the crime in question "beyond reasonable doubt" but any other juror disagrees, the jury is said to be "hung" and the government can choose whether to try the defendant again with a different jury.
+
+Empirically, the jury returns a guilty verdict on over 90% of criminal cases that go to trial (many defendants plead guilty which obviates the need for a trial by jury and sometimes the government drops the criminal charges before the trial by jury takes place). Thus, a Bayesian juror might well have a prior distribution of beliefs that implies the defendant is guilty with probability of $0.9$ or higher before the trial even begins. However, the judge presiding over the trial does not want jurors to utilize their prior beliefs or any other information besides what is presented in court in order to ensure that the defendant receives a fair trial. Thus, the judge would typically exclude any potential juror who said something to the effect of they believe the defendant is guilty with probability $0.9$ before the trial started, and if the judge did not do so, the defense attorneys would surely use one of their limited number of strikes to exclude that potential juror.
+
+As you may have heard, a criminal trial is getting underway in New York City right now involving Donald Trump. Read this [article](https://www.nytimes.com/2024/04/17/opinion/trump-trial-law.html?ugrp=m&unlocked_article_code=1.lk0.Ijks.ofXreI40Ov89&smid=url-share) for a discussion of it by prosecuting attorneys (that are not involved in this particular case). Write an essay that addresses at least the following points:
+
+-   From a Bayesian perspective, it does not make sense to require potential jurors to have "no" prior beliefs; nor is it possible to enforce that jurors only utilize the information that is presented in court. The Wikipedia [page](https://en.wikipedia.org/wiki/Beta_distribution#Bayesian_inference) for the Beta distribution discusses three different distributions in the Beta family that are all said to be "non-informative" in some sense(s). Which of these three prior distributions --- or some other one --- do you think would be most appropriate for a Bayesian juror to adopt in some criminal trial?
+
+-   If you were a juror, how would you determine whether some posterior distribution of your beliefs --- i.e. combining both your prior and the evidence presented in the trial --- is "beyond reasonable doubt"?
+
+-   In the New York Times article, Ken "\@popehat" White says "TV and expensive consultants have encouraged us to think \[a criminal trial\] is a scientific process that can be quantified. I think it remains a very subjective exercise." Bayesians would contend that Bayes Rule should be used to quantify subjective beliefs about any unknown, whether it is part of scientific research, a criminal trial, or anything else. However, there is certainly no requirement that jurors utilize Bayes Rule (correctly) to decide whether a defendant is guilty "beyond reasonable doubt". To what extend do you think the Bayesian framework that we have discussed this semester would be useful for legal researchers who study how jurors behave in criminal trials?
+
+-   Both the prosecution and the defense in New York are allowed to strike up to ten potential jurors for any reason, if the judge has not already removed the potential juror for some legal reason, and each side can strike a few more potential alternate jurors that are called upon if an initial juror is unable to last through the entire trial. In the ongoing trial of Donald Trump, the defense used all ten of its strikes by Thursday afternoon, at which point the rest of the twelve jurors were selected rather quickly. The prosecution apparently used only six of its strikes. From a decision theory perspective, how would you advise an attorney on how to utilize its ten strikes of potential jurors?
+
+-   The contributors to the New York Times article all seemed to agree that Donald Trump would not serve any jail time even if the jury finds him guilty "beyond reasonable doubt". However, they had somewhat different beliefs as to how a guilty verdict would affect the presidential election in November. How would you express your prior beliefs about the treatment effect of a guilty verdict in this trial on voters? Would you have different prior beliefs about a guilty verdict in any of the other criminal trials involving Donald Trump if those cases were to conclude before the November election?
