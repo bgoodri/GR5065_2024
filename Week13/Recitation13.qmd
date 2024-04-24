@@ -1,0 +1,243 @@
+---
+title: "Recitation for Week13"
+author: "Apoorva Joshi"
+format:
+  revealjs:
+    embed-resources: true
+    self-contained-math: true
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Introduction
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   We are going to consider the National Election Study data
+-   In polling, hierarchical models are very natural and common (among Bayesians). A Bayesian hierarchical model is nothing more than a model with at least one parameter whose prior depends on another unknown parameter, e.g.
+    -   Coefficients in splines
+    -   Parameters that vary from one "big unit" to the next
+-   Although we are not covering it, it is also natural and common (among Bayesians) to poststratify results to the voting aggregates after an election
+
+## National Election Study Data
+
+```{r}
+library(dplyr)
+data("nes", package = "rosdata")
+dataset <- filter(nes, !is.na(rvote), !is.na(income)) |> 
+  group_by(year, age, gender, race, income) |> 
+  summarize(y = sum(rvote), n = n(), .groups = "drop") |> 
+  mutate(gender = as.factor(gender), race = as.factor(race), 
+         income = as.factor(income), year = as.factor(year),
+         age = age / 10) # in decades
+```
+
+-   `age` (in decades) is numeric, while `gender`, `race`, and `income` are factors
+
+-   `y` is the number of people out of `n` in each demographic stratum who voted for the Republican candidate
+
+. . .
+
+```{r}
+X <- model.matrix(cbind(y, n - y) ~ 
+                    gender + race + income + rms::rcs(age), data = dataset)[ , -1]
+X <- sweep(X, MARGIN = 2, STATS = colMeans(X), FUN = `-`) # has 15 columns
+dataset2 <- bind_cols(select(dataset, n, year,y), X)
+```
+
+## Multilevel Data-Generating Processes
+
+::: columns
+::: {.column width="51%"}
+$\begin{eqnarray*} \forall j: y_j & \thicksim & \mathcal{B}\left(n, \mu_j\right) \\ \forall j: \mu_j & \equiv & 1 / \left(1 + e^{-\eta_j}\right) \\ \forall j: \eta_{j} & \equiv & \alpha + a_j + \sum_{k} \beta_k x_{jk} \\ \alpha & \equiv & \gamma - \sum_{k} \beta_k \overline{x}_{k} \\ \gamma & \thicksim & \mathcal{N}\left(m_0, s_0\right) \\ \forall j: a_j & \thicksim & \mathcal{N}\left(0, \sigma_a\right) \\ \sigma_a & \thicksim & \mathcal{E}\left(r\right) \\ \forall k: \beta_k & \thicksim & \mathcal{N}\left(m_k, s_k\right) \end{eqnarray*}$
+:::
+
+::: {.column width="49%"}
+::: fragment
+```{r}
+R <- 1000
+K <- ncol(X)
+s_0 <- 1
+m <- 0
+s <- 0.25
+r <- 2
+priors <- tibble (
+  gamma = rnorm(R, m, s_0),
+  sigma_a = rexp(R, r),
+  beta = matrix(rnorm(R * K,
+                      m, s),
+                nrow = R)
+)
+```
+
+How would you draw predictions? Hint: Utilize `group_by(year)`
+:::
+:::
+:::
+
+## Drawing Predictions
+
+```{r}
+#| eval: false
+predictions <- cross_join(dataset2, priors) |> 
+  group_by(year) |> 
+  transmute(a = rnorm(n(), mean = 0, sd = sigma_a),
+            eta = gamma + a + rowSums(beta *
+              pick(where(is.numeric)) |> select(-y, -n)),
+            y = rbinom(n(), size = n, prob = plogis(eta))) |> 
+  ungroup()
+```
+
+## Evaluating the Default Priors
+
+```{r}
+library(rstanarm)
+library(ggplot2)
+options(mc.cores = parallel::detectCores())
+prior <- stan_glmer(cbind(y, n - y) ~ 
+                      gender + race + income + rms::rcs(age) + (1 | year),
+                    data = dataset,    # default priors
+                    prior_PD = TRUE,   # do not condition on the data
+                    family = binomial) 
+eta <- posterior_linpred(prior)        # not actually "posterior"
+mu  <- plogis(eta)
+```
+
+```{r}
+#| eval: false
+tibble(mu = c(mu)) |> 
+  ggplot() +                           # plot on next slide
+  geom_density(aes(x = mu))
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+tibble(mu = c(mu)) |> 
+  ggplot() +
+  geom_density(aes(x = mu))
+```
+
+. . .
+
+Can you change the priors on the parameters in `stan_glmer` to make the expectation $\bigcap$-shaped or flat?
+
+## Better Priors
+
+```{r}
+prior <- update(prior,
+                prior_intercept = normal(0, 1),        # on gamma
+                prior = normal(0, 0.25),               # on all betas
+                prior_covariance = decov(scale = 0.5)) # on sigma_a
+eta <- posterior_linpred(prior)
+mu  <- plogis(eta)
+```
+
+```{r}
+#| eval: false
+tibble(mu = c(mu)) |> 
+  ggplot() + # plot on next slide
+  geom_density(aes(x = mu))
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+tibble(mu = c(mu)) |> 
+  ggplot() +
+  geom_density(aes(x = mu))
+```
+
+## Posterior Draws
+
+```{r, post}
+#| cache: true
+(post <- update(prior, prior_PD = FALSE)) # takes 10 minutes
+```
+
+## Effective Number of Parameters
+
+```{r, loo}
+#| cache: true
+loo(post) # nominal number of parameters is 29 but they have priors
+```
+
+. . .
+
+-   The $13$ $a_j$ parameters do not count as $13$ effective parameters because they have a $\mathcal{N}\left(0,\sigma_a\right)$ prior and the posterior distribution of $\sigma_a$ is not huge. This is what makes hierarchical models ideal for predicting a future "big unit"
+
+## Posterior of Year Effects
+
+```{r}
+plot(post, regex_pars = "year")
+```
+
+## Posterior of Age Effect
+
+-   In a GLM, you have to specify values of all other predictors because the effect of `age` depends on them
+
+```{r}
+nd <- tibble(age = 17:99 / 10, year = 2000,
+             gender = "1", race = "1", income = "2")
+mu <- plogis(posterior_linpred(post, newdata = nd))
+low  <- apply(mu, MARGIN = 2, FUN = quantile, probs = 0.05)
+med  <- apply(mu, MARGIN = 2, FUN = median)
+high <- apply(mu, MARGIN = 2, FUN = quantile, probs = 0.95)
+```
+
+```{r}
+#| eval: false
+tibble(age = nd$age * 10, low, med, high) |> 
+  ggplot() + # plot on next slide
+  geom_ribbon(aes(x = age, ymin = low, ymax = high), alpha = 0.25) +
+  geom_line(aes(x = age, y = med)) +
+  labs(x = "age",
+       y = "Probability Republican",
+       title = "For white men in 2000 of lower income")
+```
+
+## Plot From Previous Slide
+
+```{r}
+#| echo: false
+tibble(age = nd$age * 10, low, med, high) |> 
+  ggplot() +
+  geom_ribbon(aes(x = age, ymin = low, ymax = high), alpha = 0.25) +
+  geom_line(aes(x = age, y = med)) +
+  labs(x = "age",
+       y = "Probability Republican",
+       title = "For white men in 2000 of lower income")  
+```
+
+## Predicting a New Election
+
+```{r}
+nd <- mutate(nd, year = 2004, n = 1)
+PPD <- posterior_predict(post, newdata = nd)
+```
+
+. . .
+
+-   The posterior predictive distribution for the outcome in $2004$ is obtained from the generative model where $a_{2004} \thicksim \mathcal{N}\left(0,\sigma_a\right)$ and the posterior draws of $\sigma_a$ are utilized. From there, `posterior_predict` can construct $\eta$ and $\mu = \frac{1}{1 + e^{-\eta}}$ and then draw $Y$.
+
+## Conclusion
+
+-   Frequentist hierarchical models are extremely limited because they only make sense for the big units in cluster random sampling designs, which does not stop people from using them in other contexts where they do not make sense
+-   Supervised learning essentially does not do hierarchical models because they do not utilize probability in estimators
+-   Bayesian hierarchical models are very general and common
+-   You can allow parameters to vary across "big units" --- whether there was cluster random sampling or not --- or to allow the coefficients in a spline to depend on the wiggliness or many other situations
