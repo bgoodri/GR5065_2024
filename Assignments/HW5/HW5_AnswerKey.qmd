@@ -1,0 +1,269 @@
+---
+title: "GR5065 HW5"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \pagenumbering{gobble}
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+    keep-tex: true
+editor: visual
+execute: 
+  echo: true
+---
+
+# Splines
+
+This question was based on a [paper](https://doi-org.ezproxy.cul.columbia.edu/10.1111/ecpo.12204) by Ornstein, Hays, and Franzese
+
+```{r}
+ROOT <- "https://github.com/joeornstein/"
+FILE <- "left-parliament-rd/archive/refs/heads/master.zip"
+if (!file.exists("replication.zip")) {
+  download.file(paste0(ROOT, FILE), destfile = "replication.zip", quiet = TRUE)
+}
+unzip("replication.zip")
+```
+
+```{r}
+#| message: false
+library(dplyr)
+elections <- readr::read_csv(file.path("left-parliament-rd-master", "data", 
+                                       "IntRateCostSocDem_dataset_v2_1.csv"),
+                             show_col_types = FALSE) |> 
+  filter(country_name != "Switzerland") |> 
+  mutate(bond.market.response = bond.yield.tplus1 - bond.yield.t,
+         leftPlurality = as.factor(leftPluralityPercentage > 0)) |> 
+  filter(!is.na(bond.market.response)) |> 
+  arrange(enpp)
+```
+
+## Estimation
+
+```{r}
+#| message: false
+#| warning: false
+library(brms)
+options(mc.cores = parallel::detectCores())
+```
+
+```{r}
+#| label: RDD
+#| cache: true
+#| results: hide
+post <- brm(bond.market.response ~ s(leftPluralityPercentage, by = leftPlurality),
+            family = gaussian,
+            data = filter(elections, enpp < 3.5),
+            save_pars = save_pars(all = TRUE),
+            prior = prior(normal(0, 0.5), class = "Intercept") +
+              prior(normal(0, 1), class = "b") +
+              prior(exponential(1), class = "sigma") + 
+              prior(exponential(2), class = "sds"),
+            control = list(adapt_delta = 0.91))
+                          
+```
+
+## Evaluation
+
+```{r}
+plot(conditional_effects(post)) # default arguments
+```
+
+The first plot is not useful. Recall that `brm` separates the linear basis function from the other basis functions and puts a separate prior on its coefficient. Thus, the first plot is a straight line *by construction*, rather than empirical evidence that the relationship between `bond.market.response` and `leftPluralityPercentage` is, in fact, linear. The second plot shows the difference in the expected outcome depending on whether the left party has a plurality but, by default, it is conditional on the *average* value of the other variable(s). In this case, the average of `leftPluralityPercentage` is near zero, but not exactly zero, so it does not quite answer the question of what is the causal effect of crossing the threshold.
+
+The third plot is more useful and shows the posterior distribution of both unknown functions. The red function is conditional on the data where `leftPluralityPercentage` is negative but is extended in the plot to positive values. The green function is conditional on the data where `leftPluralityPercentage` is positive but is extended to negative values. The difference between those two functions at zero is an estimate of the causal effect of crossing zero. Although there seems to be a small gap, this plot is different than the one in Figure 4 of the paper, where the slope near zero is negative on both sides of zero.
+
+A better version of the second plot can be achieved by conditioning on `leftPluralityPercentage` being exactly zero.
+
+```{r}
+counterfactual <- tibble(leftPluralityPercentage = 0)
+plot(conditional_effects(post, effects = "leftPlurality", conditions = counterfactual))
+```
+
+This plot suggests that the causal effect is likely positive, but to answer it properly, we need to look at the posterior distribution of the difference between these two functions at zero.
+
+```{r}
+#| message: false
+library(ggplot2)
+counterfactual <- tibble(leftPluralityPercentage = 0,
+                         leftPlurality = c("FALSE", "TRUE"))
+mu <- posterior_epred(post, newdata = counterfactual)
+colnames(mu) <- c("no", "yes")
+ggplot(as_tibble(mu)) +
+  geom_density(aes(yes - no))
+```
+
+Now, it is clear that the causal effect is more likely to be positive than negative, but we are far from certain that it is positive. That is not to say that we are sure that it is zero, but rather we have not estimated the causal effect of crossing the threshold with sufficient precision.
+
+The paper by Ornstein, Hays, and Franzese does not use priors or Bayesian estimation methods, although it only goes through the motions of a typical Frequentist analysis. Overall,
+
+```{r}
+summarize(as_tibble(mu), 
+          median = median(yes - no), 
+          low  = quantile(yes - no, probs = 0.025), 
+          high = quantile(yes - no, probs = 0.975),
+          positive = mean(yes > no))
+```
+
+our posterior median is much smaller than their point estimate (of $0.592$), our 95% *credible* interval is much narrower than their 95% *confidence* interval (which runs from $-0.01$ to $1.19$), and we can answer the question of what is the probability that the effect is positive and they cannot. In addition, the bias adjustment and confidence intervals from `rdrobust::rdrobust` assume the observations are a simple random sample from some population, which they clearly are not in this situation. In other words, it is not true that if we repeated this study an infinite number of times, the average of the estimates would equal the true causal effect and only 5% of the estimated confidence intervals would include the true causal effect. This study cannot be repeated (or if it were, it would include the same observations and perhaps some future ones). Finally, `rdrobust::rdrobust` assumes (by default) that the relationship is linear on both sides of the discontinuity and produces a bias-corrected point estimate and confidence intervals given that assumption. But there is no theoretical reason to believe the relationship must be linear, which a Bayesian spline-based model can relax to the much more plausible assumption that the relationship is continuous on both sides of the discontinuity.
+
+## Pareto $k$ Estimates
+
+```{r}
+#| warning: false
+plot(loo(post), label_points = TRUE)
+```
+
+We see that the tenth observation has a Pareto $k$ estimate above 1, which invalidates the PSISLOOCV estimator of the ELPD (its variance is infinite). That is easy enough to fix by specifying `moment_match = TRUE` or `reloo = TRUE` when we call `loo`, but it is also of interest whether this observation calls into question the posterior distribution of the causal effect of crossing the threshold.
+
+```{r}
+slice(elections, 10) |> 
+  select(country_name, election_date, enpp, leftPluralityPercentage, bond.market.response)
+```
+
+On one hand, the [election](https://en.wikipedia.org/wiki/1984_New_Zealand_general_election) in 1984 in New Zealand is electly the type of scenario that the authors are interested in, where the Labor party goes from a minority to an outright majority and possibly sparks fear in bondholders. On the other hand, one might be concerned that New Zealand is not representative of parliamentary democracies or else that there might be something else going on in New Zealand in 1984 that affected bond markets but was not attributable to the election. This observation is downweighted by `rdrobust::rdrobust` to zero because its `leftPartyPercentage` of $0.2$ is outside the optimal bandwidth of $0.14$.
+
+It would be easy enough to re-estimate the posterior distribution without this observation:
+
+```{r}
+#| eval: false
+no_NZ <-
+  brm(bond.market.response ~ leftPlurality + 
+        s(leftPluralityPercentage, by = leftPlurality),
+      family = gaussian,
+      data = filter(elections, enpp < 3.5, election_id != 56),
+      prior = prior(normal(0, 0.5), class = "Intercept") +
+        prior(normal(0, 1), class = "b") +
+        prior(exponential(1), class = "sigma") + 
+        prior(exponential(2), class = "sds"))
+```
+
+## Criticism
+
+Gelman's main [point](https://statmodeling.stat.columbia.edu/2021/03/11/regression-discontinuity-analysis-is-often-a-disaster-so-what-should-you-do-instead-do-we-just-give-up-on-the-whole-natural-experiment-idea-heres-my-recommendation/) is "really the problem is not with any particular family of curves but rather with the idea that you're only supposed to adjust for the running variable x and nothing else". In the text of Ornstein, Hays, and Franzese's paper, they only adjust for `leftPluralityPercentage`, but in appendix A3, they use an (even more complicated) estimator that adjusts for covariates (as Gelman recommends).
+
+The reasoning behind Gelman's main point is that "Adjusting for a functional form f(x, phi) does *not* in general adjust for pre-treatment differences between the two groups. It adjusts for differences in x but not for anything else". In section 4.2 of the paper, the authors do consider whether other variables are continuous functions as `leftPluralityPercentage` approaches zero. One difficulty is that it is not obvious whether the *levels* of any of these potential covariates is well-suited to explain a *change* in bond prices between the month after and before the election. But the model from the text of the paper explains almost none of the variability in the outcome using only `leftPartyPercentage` so it is certainly possible that there are other systematic factors that should be included in a model.
+
+The authors also argue that the causal effect of crossing the threshold (for countries with a small number of effective parties) depends on how far to the left the left-leaning party is. Although this is a continuous concept, the authors simply restrict the data to the case where the absolute difference in the ideology scores of the left and right parties is greater than 3.
+
+One of many good aspects of the spline-based approach is that we can estimate multivariate (continuous) functions by including more predictors in `s`. In addition, it is straightforward to include covariates whose effect is thought to be linear (and small). Finally, it would seem worthwhile to use a Student $t$ log-likelihood rather than a normal in case the errors are heavy-tailed. These could be combined in `brm` to look like
+
+```{r}
+#| eval: false
+brm(bond.market.response ~ leftPlurality + 
+      s(leftPluralityPercentage, idealPointDifference, by = leftPlurality) +
+      gdppc_WDI + logpop + inflation_WDI + exp_WDI + tax_rev_WDI,
+    family = student,
+    data = filter(elections, enpp < 3.5),
+    prior = my_prior)
+```
+
+# Multilevel Model
+
+```{r}
+ROOT <- "https://www2.census.gov/programs-surveys/demo/datasets/hhp/2020/wk1/"
+FILE <- "HPS_Week01_PUF_SAS.zip"
+if (!file.exists(FILE)) {
+  download.file(paste0(ROOT, FILE), destfile = FILE, quiet = TRUE)
+}
+unzip(FILE)
+```
+
+```{r}
+pulse <- haven::read_sas("pulse2020_puf_01.sas7bdat")
+```
+
+It is useful to recode some variables and give them better names:
+
+```{r}
+pulse <- mutate(pulse, 
+                female = as.integer(EGENDER == 2),
+                race = factor(RRACE, levels = 1:4, 
+                              labels = c("White", "Black", "Asian", "Other")),
+                state = as.factor(EST_ST),
+                educ = factor(EEDUC, levels = 1:7, ordered = TRUE,
+                              labels = c("Less than HS", "Some HS", "HS", 
+                                         "Some college", "Associates", "Bachelors",
+                                         "Graduate")),
+                income = if_else(INCOME == -99, NA_integer_, INCOME),
+                food_security = if_else(FOODCONF == -99, NA_integer_, 
+                                        FOODCONF))
+
+pulse_grouped <- count(pulse, food_security, female, race, income, educ, state)
+```
+
+We aggregate by the relvant variables to reduce the number of unique observations and thus reduce the runtime a bit. The model allows the intercept in state $j$ to deviate from the intercept in the United States as a whole when modeling a question on food security, which is reasonable because people are subject to different state-level policies and different rates of covid spread. We also force the relationship to be monotonic for the person's level of education and income and use weakly informative priors on all parameters.
+
+```{r}
+#| label: food_security
+#| cache: true
+#| results: hide
+post <- brm(food_security | weights(n) ~ female + race + mo(educ) + mo(income) + (1 | state),
+            family = cumulative,
+            data = pulse_grouped,
+            prior = prior(normal(0, 1), class = "Intercept") + 
+              prior(normal(0, 0.5), class = "b") +
+              prior(exponential(1), class = "sd"))
+```
+
+```{r}
+post
+```
+
+Unsurprisingly, having more education or income increases the log-odds of indicating a greater amount of food security, and all of the minority races anticipate less food security relative to white people, as do females relative to males. But rather than talking about log-odds, it is better to visualize for variation in a predictor affects variation in the probability of answering particular outcome values, holding the other predictors are default values, such as
+
+```{r}
+plot(conditional_effects(post, effects = "educ", categorical = TRUE),
+     theme = theme(legend.position = "top"))
+```
+
+In this case, all the Pareto $k$ estimates are fine, so if we had another model to compare it to, we could do that using `elpd_loo`.
+
+```{r}
+#| label: loo
+#| cache: true
+loo(post)
+```
+
+However, when the data are aggregated to the group level, PSISLOOCV estimates what would happen if one *group* were left out and predicted by all of the remaining groups. If any of the groups were too large, then it would not be a surprise if their Pareto $k$ values were greater than $0.7$. This issue can usually be fixed by adding `moment_match = TRUE` or `reloo = TRUE` to the call to `loo` as necessary.
+
+The pulse survey was administered online and is not representative of the population as a whole. If you just look at the data, it is over 80% white, over 60% female, etc. From a Frequentist perspective, this is a huge problem that can only be mitigated with very complicated adjustments. From a Bayesian perspective, it is not that big a deal because the posterior distribution is conditional on the data, which is fine as long as the people in the data are representative of people with the same demographics. If the only problem is that the proportions in the data are different than the proportions in the population, you can easily predict with `newdata` that is constructed with one row for each stratum and then weighting those predictions by the proportion of the population in each stratum. This is called post-stratification (in contrast to what could be considered Frequentist pre-stratification that marginalize over possible datasets that could be sampled).
+
+# Jury Selection
+
+From a Bayesian perspective, Haldane's Beta prior which lets $a$ and $b$ both approach zero at the same rate seems to be closest to what the judicial system expects of jurors. This prior implies that the defendant is guilty with probability $0.5$. A prior with $a = 1 = b$, then the beta PDF is constant over the $\left[0,1\right]$ interval, which is considered to be uninformative but conveys the information that both guilty and non-guilty are possible. Clearly, either guilty or non-guilty are possible juror verdicts, but it is not possible for the same defendant to be guilty and non-guilty. Haldane's prior is constant if you transform the probability to log-odds. Jeffreys constructed a prior with $a = 0.5 = b$, which implies the same amount of information regardless of whether the model is parameterized in terms of probability, or log-odds, or any other monotonic transformation of probability. This seems attractive in many contexts because whether you apply a transformation to the probability does not seem as if it should change anything. The prior PDF is $\bigcup$-shaped, which is, in a manner of speaking, "between" a Beta prior $a = 0 = b$ and one with $a = 1 = b$, so it also implies that that both guilty and non-guilty are possible for the same defendant.
+
+However, it is a bit odd to think of a Beta prior with a Bernoulli likelihood in the context of a criminal trial. If an outsider had a some Beta prior on the probability that a defendant was guilty, it could make sense for the outsider to update their beliefs upon observing that $n$ jurors found the defendant guilty using Bayes Rule. However, what should jurors do when the evidence presented in the trial is not independent Bernoulli random variables? A juror could, theoretically, still use Bayes Rule with a prior and a conditional distribution of all the evidence.
+
+The phrase "beyond reasonable doubt" is critical in criminal trials but frustrating because no one can define it precisely. From a decision-theory perspective, the courts could state a utility function where the cost of one false conviction is the same as the cost of $N > 1$ false acquittals, and then design rules and procedures to minimize the expected total cost across many criminal trials. But the courts do not explicitly do so.
+
+In addition, the whole judicial system seems to work a bit better in cases where it is obvious that a crime has been committed (i.e. a bank has been robbed by someone wearing a ski mask) and then primary question for the jury to answer is whether the defendant is, in fact, the one who committed the crime. There is another noteworthy trial going on in Idaho right now that falls in that cateogry where several people were murdered with a knife, and the primary question for the jury to decide is whether the defendant (whose DNA is on the knife sheath found at the scene) is the person who murdered them. In this Trump trial (and other trials involving Trump), there is little dispute about what Trump did, but the defense seems to be that what Trump did is not a crime, or at least is not the felonies he is accused of. To be a felony, the state prosecutor needs to prove beyond reasonable doubt that Trump falsified payment records in order to commit another crime (e.g. campaign finance fraud) that federal prosecutors did not charge Trump with. So, it basically boils down to whether is it beyond reasonable doubt that Trump intended to commit another crime when he falsified payment records, but that still requires operationalizing what "reasonable doubt" means.
+
+If the 12 jurors were independent, then this problem would mostly take care of itself. For example, if an individual juror decides a defendant is guilty if and only if the probability is greater than $0.9$, then the probability that 12 independent jurors all find the defendant guilty would be at most $0.1^{12}$. But jurors are not independent; not only are they presented the same evidence, they deliberate with each other. Thus, you would need to define "reasonable doubt" in such a way that the probability that 12 dependent jurors all find the defendant guilty --- given that the defendant is not guilty --- is like $0.01$ or $0.02$ or so. And that is tough to do without a model (or even rules) for how the jury deliberates.
+
+The empirical question of how juries tend to rule is essentially like any other social science question, although it tends to get studied by law students and law professors who have very little training in quantitative methods and no training in Bayesian methods. However, Bayesian methods seem appropriate because jurors are not randomized. Or more specifically, which citizens are assigned jury duty on a particular day is fairly random, but which of those are selected to hear a criminal trial is not. Thus, it is not clear whether there is any Frequentist question that can be answered by the data that juries produce. You might be able to say something like "Out of all the ways that $N = 100$ citizens could be assigned jury duty, what proportion of them that would yield a 12 person jury that convicts the defendant?", but that is not the sort of question that legal researchers seem keen to ask. If you condition on the historical data, and ask a question like "What is the difference in probability that a white defendant is convicted vs. a non-white defendant given the same charges and evidence?", then you are asking a Bayesian question and should presumably use Bayesian methods to produce a Bayesian answer in the form of a posterior distribution.
+
+Decision-theory is useful for thinking about strategy during jury selection, even though lawyers do not explicitly refer to it. If the prosecution values a guilty verdict as $1$ and a not-guilty verdict or hung jury as $0$, then the expected utility is the probability of a guilty verdict, which the prosecution wants to maximize and the defense wants to minimize. Suppose the $n$-th person assigned jury duty has some probability of finding the defendant guilty of $\theta_n$, which has some probability distribution.
+
+If the total number of people assigned jury duty, $N$, were fixed and the number of selected jurors was random, this would be a lot easier. But, in fact, the number of selected jurors is fixed at 12, and the trials works through however many prospective jurors are needed to reach 12 seated jurors, so $N$ is a random variable. If the prosecution strikes the first ten prospective jurors whose $\theta_n$ is merely less than $\mathbb{E}\theta$, then it is entirely possible that some of the subsequent prospective jurors will have an even lower $\theta_n$ (and vice versa for the defense). A further complication is that the prosecution (or defense) may learn something about the distribution of $\theta$ as the $n$-th prospective juror is either accepted or struck by the other side.
+
+It seems clear that neither the prosecution nor the defense wants to have any strikes remaining when the 12 jurors are seated, although perhaps that could happen with some small probability under the optimal strategy. Thus, each side would want to utilize their ten strikes on potential jurors who are in the tails of the $\theta$ distribution, but how far into the tail a prospective juror's $\theta_n$ needs to be before one side strikes them depends on how many prospective jurors each side thinks they will need to go through before 12 are seated, which, in turn, depends on the opposite tail and what the other side is doing. In short, this is essentially a game-theory problem and game-theory utilizes subjective probability without a second thought.
+
+It seems as if this criminal trial (and perhaps other ones that Trump is involved in) are unlikely to affect most voters. Suppose there are five types of voters in 2024:
+
+1.  Those that voted for Trump in 2016 and 2020
+
+2.  Those that voted for Hilary Clinton in 2016 and for Joe Biden in 2020
+
+3.  Those that voted for Trump in 2016 and for Joe Biden in 2020
+
+4.  Those that voted for Clinton in 2016 and for Trump in 2020
+
+5.  Other voters, who either did not vote in both 2016 or 2020 or voted for some third-party candidate
+
+The criminal trials are very unlikely to affect many voters in groups (1) and (2) and fairly unlikely to affect many voters in groups (3) and (4). Group (5) consists of young people who were not 18 years old (or not citizens) in the previous election(s), people who were eligible but chose not to vote in the previous election(s), and people who voted for a third-party candidate at least once. I doubt the criminal trials will affect young voters very much, although they many not have been so aware of what Trump was doing in 2016. And people who do not vote regularly in presidential elections or vote for third-party candidates are difficult to predict what they might respond to.
+
+All of this is to say that any such model should include interaction terms between the result of the criminal trial(s) and what the voter did in the previous two elections. And the priors on all these coefficients should be concentrated near zero, but with more concentration for voters in groups (1) and (2) than for groups (3), (4), and (5).
