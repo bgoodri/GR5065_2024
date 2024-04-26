@@ -1,0 +1,260 @@
+---
+title: "Intermediate Hierarchical Models"
+author: "Ben Goodrich"
+format:
+  revealjs:
+    embed-resources: true
+    self-contained-math: true
+editor: visual
+execute: 
+  echo: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Obligatory Disclosure
+
+```{=html}
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+  MathJax.Hub.Insert(MathJax.InputJax.TeX.Definitions.macros,{
+    cancel: ["Extension","cancel"],
+    bcancel: ["Extension","cancel"],
+    xcancel: ["Extension","cancel"],
+    cancelto: ["Extension","cancel"]
+  });
+});
+</script>
+```
+-   Ben is an employee of Columbia University, which has received several research grants to develop Stan
+
+-   Ben is also a manager of GG Statistics LLC, which uses Stan
+
+-   According to Columbia University [policy](https://research.columbia.edu/content/conflict-interest-and-research), any such employee who has any equity stake in, a title (such as officer or director) with, or is expected to earn at least $\$5,000.00$ per year from a private company is required to disclose that
+
+## Two Stage Least Squares (2SLS)
+
+-   Instrumental variables designs are common in economics but the principles behind it are conflated with the 2SLS estimator of the instrumental variable model
+
+    1.  Use OLS to predict the causal variable with all the other predictors, including the "instrument"
+
+    2.  Use the fitted values from (1) in place of the causal variable when fitting the outcome with OLS, including all the other predictors except the "instrument"
+
+-   2SLS is not even a good estimator on Frequentist grounds with finite data and how bad it is depends on the characteristics of the data-generating process
+
+## Wald Estimator
+
+If the treatment variable $X$ is binary and the instrument $Z$ is binary, then an IV point estimator can be written as$\Delta = \frac{\mathrm{cov}\left(Z, Y\right)}{\mathrm{cov}\left(Z, X\right)}$
+
+-   2SLS and FIML are equivalent to $\Delta$ under these conditions
+
+-   Both the numerator and the denominator are asymptotically normal across randomly sampled datasets
+
+-   We saw on HW2 that the [distribution](https://en.wikipedia.org/wiki/Ratio_distribution#Uncorrelated_noncentral_normal_ratio) of a ratio of normal RVs does not have an expectation
+
+-   FIML does not have an expectation either. 2SLS has an expectation only if there are excess instruments
+
+## Generative Model with an Instrument {.smaller}
+
+::: columns
+::: {.column width="46%"}
+Math Notation $\begin{eqnarray*} \forall n: t_n,y_n & \thicksim & \mathcal{N}^2\left(\mu_{n,1}, \mu_{n,2}, \sigma_{1}, \sigma_{2}, \rho\right) \\ \sigma_1 & \thicksim & \mathcal{E}\left(r_1\right) \\ \sigma_2 & \thicksim & \mathcal{E}\left(r_2\right) \\ \rho & \thicksim & \mathcal{U}\left(-1,1\right) \\ \forall n: \mu_{n,1} & \equiv & \lambda + \zeta \left(z_{n} - \overline{z}\right) + \\ & & \sum_{k} \theta_k \left(x_{n,k} - \overline{x}_k\right) \\ \lambda & \thicksim & \mathcal{N}\left(M_0, S_0\right) \\ \zeta & \thicksim & \mathcal{N}\left(\uparrow,v\right) \\ \forall k: \theta_k & \thicksim & \mathcal{N}\left(M_k,S_k\right) \\ \forall n: \mu_{n,2} & \equiv & \gamma + \sum_{k} \beta_k \left(x_{n,k} - \overline{x}_k\right) \\ \gamma & \thicksim & \mathcal{N}\left(m_0, s_0\right) \\ \forall k: \beta_k & \thicksim & \mathcal{N}\left(m_k,s_k\right) \\ \end{eqnarray*}$
+:::
+
+::: {.column width="54%"}
+::: fragment
+::: incremental
+-   If $t_n$ and $y_n$ are distributed bivariate normal, then $y_n \mid t_n$ is distributed univariate normal with expectation $\mu_2 + \frac{\sigma_2}{\sigma_1}\rho \left(t_n - \mu_1\right)$ and standard deviation $\sqrt{1 - \rho^2} \sigma_2$
+-   The causal effect is $\Delta = \frac{\sigma_2}{\sigma_1}\rho$ (in the model)
+-   You need an informative prior on $\zeta$ that makes it monotonic
+-   You could also restrict the sign of $\rho$ by using a $\mathcal{U}\left(0,1\right)$ or $\mathcal{U}\left(-1,0\right)$ prior
+-   Bayesians can use the same MCMC algorithm in Stan that they should use for other models
+-   Once you have posterior draws of $\sigma_2$, $\sigma_1$, and $\rho$ , you can form posterior draws of $\Delta$
+:::
+:::
+:::
+:::
+
+## Angrist and Krueger (1991) Data
+
+```{r}
+library(dplyr)
+ROOT <- "http://higheredbcs.wiley.com/legacy/college/"
+PATH <- "lancaster/1405117206/datasets/AKdata.zip"
+if (!file.exists("AKdata.zip")) {
+  download.file(paste0(ROOT, PATH), destfile = "AKdata.zip")
+  unzip("AKdata.zip")  
+}
+AKdata <- read.table("AKdata.txt", header = FALSE, skip = 4,
+                     col.names = c("ID", "log_wage", "schooling",
+                                   "birth_quarter", "age")) |> 
+  mutate(birth_quarter = as.ordered(birth_quarter), age = age / 10)
+AER::ivreg(log_wage ~ age + schooling | age + birth_quarter, 
+           data = AKdata) |> summary()
+```
+
+## Instrumental Variables with brms
+
+```{r}
+library(brms)
+options(mc.cores = parallel::detectCores())
+get_prior(brmsformula(mvbind(schooling, log_wage) ~ age + mo(birth_quarter)) + 
+            set_rescor(TRUE), data = AKdata) |> 
+    as_tibble() |> 
+    select(prior, class, coef, resp)
+```
+
+## WTF is LKJ?
+
+-   Lewandowski, Kurowicka, & Joe (2009) derived a correlation matrix distribution that is like a symmetric beta distribution. If its shape parameter is $1$, then the PDF is constant and if its shape parameter is $> 1$, the PDF is $\bigcap$-shaped on $\left(-1,1\right)$.
+
+-   In this case, the correlation matrix is just $2 \times 2$ with one $\rho$
+
+-   Putting a prior on a correlation matrix and the standard deviations allows you to induce a prior on the covariances $\sigma_{ij} = \rho_{ij} \sigma_i \sigma_j$, which was a great improvement over Bayesian modeling in the 1990s
+
+## Informative Priors
+
+```{r}
+my_prior <- 
+  prior(normal(5, 1), class = "Intercept", resp = "logwage") +
+  # exclusion restrcitions
+  prior(constant(0), class = "b", 
+        coef = "mobirth_quarter", resp = "logwage") +
+  prior(normal(0, 0.5), class = "b", coef = "age", resp = "logwage") +
+  prior(exponential(1), class = "sigma", resp = "logwage") +
+  
+  prior(normal(12, 2), class = "Intercept", resp = "schooling") +
+  prior(normal(0.1, 0.05), class = "b", 
+        coef = "mobirth_quarter", resp = "schooling") +
+  prior(normal(0.25, 1), class = "b", coef = "age", resp = "schooling") +
+  prior(exponential(0.5), class = "sigma", resp = "schooling") +
+  prior(lkj(1.5), class = "rescor")
+```
+
+## Posterior Distribution
+
+```{r, iv}
+#| label: AK
+#| cache: true
+#| results: hide
+post <- brm(brmsformula(mvbind(schooling, log_wage) ~ 
+                          age + mo(birth_quarter)) + # takes a long time
+              set_rescor(TRUE), data = AKdata, prior = my_prior) 
+```
+
+```{r}
+#| fig-show: hide
+#| eval: false
+library(ggplot2)
+as_tibble(post) |> 
+  mutate(Delta = sigma_logwage / sigma_schooling * 
+           rescor__schooling__logwage) |> 
+  ggplot() + # plot on next slide
+  geom_density(aes(x = Delta))
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+library(ggplot2)
+as_tibble(post) |> 
+  mutate(Delta = sigma_logwage / sigma_schooling * 
+           rescor__schooling__logwage) |> 
+  ggplot() +
+  geom_density(aes(x = Delta))
+```
+
+## McElreath on Hierarchical Models
+
+-   Bayesian hierarchical models should be the default and you should need strong theoretical and empirical reasons to not utilize a hierarchical model, whose advantages include:
+
+    1.  "Improved estimates for repeat sampling" (within units)
+
+    2.  "Improved estimates for imbalance in sampling"
+
+    3.  "Estimates of variation"
+
+    4.  "Avoid averaging, retain variation"
+
+-   MLE is a terrible estimator of hierarchical models and penalized MLE is not much better because a point estimate is a very incomplete summary of the model's implications
+
+## Underfitting and Overfitting
+
+1.  Full / complete pooling underfits
+
+2.  No pooling overfits
+
+3.  Bayesian hierarchical models do partial pooling to some degree that is estimated conditional on the data and marginalizes over the remaining uncertainty
+
+-   In principle, you could use `loo_model_weights` to find non-negative weights (that sum to $1$) on a complete pooling model, a no pooling model, and a partial pooling model that maximize the PSISLOOCV estimator of the ELPD but almost all the weight is going to be put on the partial pooling model
+
+## Arsenic in Wells
+
+```{r}
+data(wells, package = "rstanarm")
+wells <- mutate(wells, dist = dist / 100)
+```
+
+```{r, arsenic}
+#| cache: true
+#| results: hide
+#| warning: false
+post <- brm(switch ~ assoc + s(arsenic, dist),
+            family = bernoulli,
+            data = wells,
+            prior = prior(normal(0, 1), class = "Intercept") +
+              prior(normal(0, 0.5), class = "b") + 
+              prior(exponential(1), class = "sds"),
+            save_pars = save_pars(all = TRUE))
+```
+
+. . .
+
+Could we obtain a submodel that has almost the same ELPD but with fewer predictors?
+
+## The projpred Package (on CRAN)
+
+-   You might think you could take some predictor(s) out, run `loo_compare`, and see if the ELPD goes up
+
+-   However, that reflects (false) certainty that the coefficient on the removed predictor is zero, when actually you have posterior beliefs that it is concentrated near zero
+
+-   The correct way to do this is with "projection pursuit", which is implemented in the projpred package
+
+```{r}
+library(projpred)
+```
+
+```{r, projpred}
+#| message: false
+#| fig-show: hide
+#| cache: true
+cvvs <- varsel(post, refit_prj = FALSE) # cv_varsel(post) is better but slower
+plot(cvvs, stats = "elpd", deltas = TRUE) # plot on next slide
+```
+
+## Plot from Previous Slide
+
+```{r}
+#| echo: false
+plot(cvvs, stats = "elpd", deltas = TRUE)
+```
+
+## Submodel Projection
+
+```{r}
+#| eval: false
+modsize_decided <- 1
+soltrms <- solution_terms(cvvs)
+( soltrms_final <- head(soltrms, modsize_decided) )
+proj_post <- project(post, solution_terms = soltrms_final)
+draws <- as_tibble(proj_post)
+```
+
+## Final Exam
+
+-   Will be on May 9th over Zoom from 7:10 PM to 10:00 PM Eastern time
+
+-   Final exam will be similar in format to the midterm
+
+-   There are plenty of questions to be asked about the course material since the midterm, but all of it builds on the framework we built up prior to the midterm, so the final exam is "cumulative" in that sense
