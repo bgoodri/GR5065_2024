@@ -282,10 +282,8 @@ Data for a futures contract that resolves when the Federal Reserve Board meets o
 ROOT <- "https://cmegroup-tools.quikstrike.net/User/Export/FedWatch/"
 FILE <- "MeetingExport.aspx?MeetingDate=20240918"
 HASH <- "&insid=125013644&qsid=4d9475fc-8441-49ea-acde-483bb8f57e4a"
-if (!file.exists("FedMeeting_20240918.csv")) {
-  download.file(paste0(ROOT, FILE, HASH), 
-                destfile = "FedMeeting_20240918.csv", quiet = TRUE)
-}
+download.file(paste0(ROOT, FILE, HASH), 
+              destfile = "FedMeeting_20240918.csv", quiet = TRUE)
 FedMeeting_20240918 <- readr::read_csv("FedMeeting_20240918.csv",
                                        show_col_types = FALSE) |> 
   mutate(Date = as.Date(Date, format = "%m/%d/%Y")) |> 
