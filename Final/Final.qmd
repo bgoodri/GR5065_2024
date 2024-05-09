@@ -1,0 +1,462 @@
+---
+title: "GR5065 Final Exam"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+        \usepackage{cancel}
+    keep-tex: true
+editor: visual
+execute: 
+  echo: true
+---
+
+-   You should SaveAs this .qmd file in the Final/ directory but with a different name, write your answers in under the appropriate subheading, and then delete the question text.
+-   You can use all of the course materials, readings, etc. to complete this exam. The only thing that is prohibited is communicating with other people (besides Ben) about the exam before everyone has finished (not all students are taking the exam at the same time).
+-   You have 2 hours and 50 minutes to upload your .qmd file to the Assignments section of Canvas. You can subsequently upload the .pdf file after it finishes rendering.
+-   To avoid some conflicts with function names, it is best if you do not call `library(brms)` until you need to use the `brm` function to answer Q3.
+-   You are not required to utilize \LaTeX  for any part of the exam; just type clearly.
+-   Each of the four main problems is weighted equally and each of the subproblems within each problem is weighted equally. Thus, you should try all of the subproblems so that you can at least receive partial credit.
+
+\newpage
+
+# Models for Proportions
+
+If $Y \in \{0,1\}$ is a *binary* outcome, then the Probability Mass Function (PMF) of the Bernoulli distribution is $\Pr\left(y \mid \pi\right) = \pi^{y} \left(1 - \pi\right)^{1 - y}$. We know that this PMF is valid for $\pi \in \left[0,1\right]$ because $\pi^0 \left(1 - \pi\right)^{1 - 0} + \pi^1 \left(1 - \pi\right)^{1 - 1} = 1 \times \left(1 - \pi\right) + \pi \times 1 = 1$ and that $\pi = \mathbb{E}Y$ because $0 \times \pi^0 \left(1 - \pi\right)^{1 - 0} + 1 \times \pi^1 \left(1 - \pi\right)^{1 - 1} = 0 + 1 \times \pi \times 1 = \pi$.
+
+## Continuous Bernoulli
+
+Although you do not need to read it, [Ganem and Cunningham (2019)](https://arxiv.org/pdf/1907.06845.pdf) derives a probability distribution when $Y \in \left[0,1\right]$ is a *continuous* outcome, which has a Probability Density Function (PDF) $f\left(y \mid \theta\right) = C\left(\theta\right) \theta^y \left(1 - \theta\right)^{1 - y}$, where the normalizing constant is $C\left(\theta\right) = \frac{2 \tanh^{-1}\left(1 - 2 \theta\right)}{1 - 2 \theta}$ and $\tanh^{-1}\left(z\right) = \frac{\ln\left(1 + z\right) - \ln\left(1 - z\right)}{2}$ is the inverse hyperbolic tangent function for $z \in \left[-1,1\right]$, which is typically called `atanh` in computer languages. The normalizing constant, as a function of $\theta$, looks like
+
+```{r}
+#| message: false
+library(ggplot2)
+ggplot() +
+  xlim(0, 1) +
+  geom_function(fun = ~ 2 * atanh(1 - 2 * .x) / (1 - 2 * .x), n = 1000) +
+  ylab("Normalizing Constant")
+```
+
+Ganem and Cunningham (2019) refers to this probability distribution (which does not come with R) as the "continuous Bernoulli" distribution due to the fact that its PDF is proportional to the PMF of the actual Bernoulli distribution for binary outcomes.
+
+-   Demonstrate that $f\left(y \mid \theta\right)$ is a valid PDF if $\theta = \frac{1}{3}$ and $\theta = \frac{1}{\sqrt{2}}$, which supports Ganem and Cunningham's contention that the PDF is valid iff $\theta \in \left(0,1\right)$
+
+## Fractional Logit
+
+Long before Canem and Cunningham (2019) derived the "continuous Bernoulli" distribution for continuous $Y$, [Papke and Wooldridge (1996)](https://onlinelibrary.wiley.com/doi/10.1002/%28SICI%291099-1255%28199611%2911%3A6%3C619%3A%3AAID-JAE418%3E3.0.CO%3B2-1) --- which you also do not need to read --- advocated finding$$\widehat{\boldsymbol{\beta}} = \arg\max \sum_{n = 1}^N \left[y_n \ln \theta_n\left(\widetilde{\boldsymbol{\beta}}\right) + \left(1 - y_n\right)\ln\left(1 - \theta_n\left(\widetilde{\boldsymbol{\beta}}\right)\right) \right]$$
+
+where $\theta_n\left(\widetilde{\boldsymbol{\beta}}\right) = \frac{1}{1 + e^{-\widetilde{\eta}_n}}$ is a standard logistic CDF inverse link function and $\widetilde{\eta}_n = \widetilde{\beta}_0 + \sum_{k = 1}^K \widetilde{\beta}_k x_{nk}$ is a linear predictor (we usually denoted $\widehat{\beta}_0$ as $\widehat{\alpha}$ in GR5065). Papke and Wooldridge's (1996) estimator takes exactly the same form as the Maximum Likelihood Estimator (MLE) of the parameters in a logit model with *binary* outcomes, so they refer to it as the "fractional logit" estimator.
+
+However, since the outcome is continuous and Papke and Wooldridge (1996) omits the $\ln C\left(\theta_n\left(\widetilde{\boldsymbol{\beta}}\right)\right)$ term from the function being maximized, the fractional logit estimator is referred to as a quasi-MLE rather than a MLE. Nevertheless, Papke and Wooldridge's (1996) shows that as $N \uparrow \infty$, $\mathbb{E}\left[\left(\beta_k - \widehat{\beta}_k\right)^2\right] \downarrow 0 \forall k$, which is to say that this quasi-MLE is a consistent estimator for each $\beta_k$, as long as $\mathbb{E}Y\mid X = \theta\left(\boldsymbol{\beta}\right)$. In particular, nothing is assumed about the error $y_n - \theta_n\left(\boldsymbol{\beta}\right)$. In addition, it is possible to obtain a consistent estimator of the standard error across randomly-sampled datasets of size $N$, $\sqrt{\mathbb{E}\left[\left(\widehat{\beta}_k - \mathbb{E}\widehat{\beta}_k\right)^2\right]}$, for each $k$, which makes it possible to obtain a confidence interval estimator $\widehat{\beta}_k \mp 1.96 \sqrt{\mathbb{E}\left[\left(\widehat{\beta}_k - \mathbb{E}\widehat{\beta}_k\right)^2\right]}$ that includes $\beta_k$ in 95% of randomly-sampled datasets as $N \uparrow \infty$.
+
+-   Thus, Papke and Wooldridge (1996) shows that $\frac{\widehat{\beta}_k - \beta_k}{\sqrt{\mathbb{E}\left[\left(\widehat{\beta}_k - \mathbb{E}\widehat{\beta}_k\right)^2\right]}}$ is asymptotically distributed standard normal across randomly-sampled datasets of size $N$, which provides a basis for testing a point null hypothesis about $\beta_k$. Explain why this result is, by itself, not the same thing as saying the distribution of $\beta_k \mid \widehat{\beta}_k$ is normal with expectation $\widehat{\beta}_k$ and standard deviation $\sqrt{\mathbb{E}\left[\left(\widehat{\beta}_k - \mathbb{E}\widehat{\beta}_k\right)^2\right]}$ .
+
+## Supervised Learning
+
+Supervised Learners are often concerned with modeling the pixels of grayscale images, which can be represented as proportions where zero is pure black and one is pure white (see, for example, the `gray` function in R). Supervised Learners sometimes maximize (a negative penalty function plus)\
+$$\sum_{n = 1}^N \left[y_n \ln \theta_n\left(\widetilde{\boldsymbol{\omega}}\right) + \left(1 - y_n\right)\ln\left(1 - \theta_n\left(\widetilde{\boldsymbol{\omega}}\right)\right) \right]$$where $\theta_n\left(\widetilde{\boldsymbol{\omega}}\right)$ could be the output of a neural-network, which is a nonlinear function that can be seen as applying a sequence of activation functions to inputs that are weighted by (some subset of) $\widetilde{\boldsymbol{\omega}}$. Thus, $y_{N + n} - \theta_{N + n}\left(\widehat{\boldsymbol{\omega}}\right)$ is the error for the $n$-th observation in the testing data. Supervised Learners often choose the model with the smallest root mean-squared error in the testing data, and mean-squared error can be decomposed into squared bias plus variance.
+
+This maximization problem omits the $\ln C\left(\theta_n\left(\widetilde{\boldsymbol{\omega}}\right)\right)$ term from the "continuous Bernoulli" PDF. Ganem and Cunningham (2019) shows that the expectation of $Y$ under the "continuous Bernoulli" distribution is not $\theta$ (as would be the case in the actual Bernoulli distribution for binary outcomes) but rather is the function $\mathbb{E}Y = \frac{1}{2 \tanh^{-1}\left(1 - 2\theta\right)} - \frac{\theta}{1 - 2\theta}$.
+
+-   Explain how / why maximizing the above function --- which omits the $\ln C\left(\theta_n\left(\widetilde{\boldsymbol{\omega}}\right)\right)$ term --- in the training data tends to yield worse predictions in the testing data, assuming the $n$-th observation is drawn from a "continuous Bernoulli" distribution with parameter $\theta_n\left(\boldsymbol{\omega}\right)$
+
+## Generative Model
+
+As a technical matter, it would be rather easy to use the "continuous Bernoulli" distribution for proportions in a Bayesian model. Consider again the county-level data assembled by Charles Gaba
+
+```{r}
+#| message: false
+source(file.path("..", "Week07", "get_Gaba_data.R")) # loads dplyr
+Gaba <- filter(Gaba, two_doses_percent <= 100) |> 
+  mutate(two_doses_prop = two_doses_percent / 100)
+```
+
+Suppose that the proportion of people in county $n$ that have received two doses of a covid vaccine (`two_doses_prop`) is a GLM of an intercept and the percentage of voters who voted for Donald Trump in 2020 (`Trump_percent`). The following function can be used to draw `n` times from a "continuous Bernoulli" distribution with parameter (vector) `theta`:
+
+```{r}
+rcB <- function(n, theta) {
+  u <- runif(n)
+  log1mtheta <- log1p(-theta)
+  denom <- log(theta) - log1mtheta
+  numer <- log1p(u * (2 * theta - 1) - theta) - log1mtheta
+  if (length(theta) == n) return(ifelse(theta == 0.5, u, numer / denom))
+  if (length(theta) == 1 && theta != 0.5) return(numer / denom)
+  if (length(theta) >= 2 && length(theta) != n) stop("theta is the wrong size")
+  return(u) # theta == 0.5
+}
+```
+
+-   Draw $R = 1000$ times from the prior predictive distribution assuming the outcome is "continuous Bernoulli". You will need to choose reasonable priors on the two parameters.
+
+-   Make a plot of this prior predictive distribution to show that it looks reasonable in some sense
+
+## Criticism
+
+Bob Kubinec wrote a blog [post](https://www.robertkubinec.com/post/frac_logit/) --- which you should read quickly --- that goes through most of the previous points and shows how you could use `brms::brm` to update your beliefs about the parameters conditional on "continuous Bernoulli" data.
+
+However, Kubinec repeatedly conflates the definitions of consistency and unbiasedness of a point estimator. As was stated above, a consistent estimator is one where $\mathbb{E}\left[\left(\beta_k - \widehat{\beta}_k\right)^2\right] \downarrow 0 \forall k$ as $N \uparrow \infty$. An unbiased estimator is one where $\mathbb{E}\widehat{\beta}_k = \beta_k \forall k$ for a fixed $N$. Papke and Wooldridge (1996) shows that their fractional logit estimator is consistent when $\mathbb{E}Y\mid X = \theta\left(\boldsymbol{\beta}\right)$, but it is not unbiased.
+
+The essence of this debate is best summarized in a [tweet](https://twitter.com/lihua_lei_stat/status/1627892073637740544?ref_src=twsrc%5Etfw) by Lihua Lei who emphasized that Jeff Wooldridge is interested in (estimating) $\boldsymbol{\beta}$ and is not interested in any other aspect of the probability distribution of $Y \mid X$. Thus, Wooldridge (and a lot of other contemporary econometricians) seeks to avoid making any assumption about $Y \mid X$ except the form of its expectation. For example, a Beta distribution for $Y \mid X$ has an expectation, which can be set equal to $\theta\left(\boldsymbol{\beta}\right)$, but the fractional logit estimator remains consistent if $Y \mid X$ has some other distribution on $\left[0,1\right]$ with expectation equal to $\theta\left(\boldsymbol{\beta}\right)$. The fact that $\boldsymbol{\beta}$ can be estimated consistently by fractional logit even if the errors are correlated over time, have different variances, etc. makes fractional logit "robust" in econometric terminology.
+
+Kubinec does not address the following point: If the data are generated by the "continuous Bernoulli" distribution (as in the previous subproblem), then $\mathbb{E}Y\mid X = \frac{1}{2 \tanh^{-1}\left(1 - 2\theta\left(\boldsymbol{\beta}\right)\right)} - \frac{\theta\left(\boldsymbol{\beta}\right)}{1 - 2\theta\left(\boldsymbol{\beta}\right)} \neq \theta\left(\boldsymbol{\beta}\right)$, in which case the fractional logit estimator is not consistent. But if $\mathbb{E}Y\mid X = \theta\left(\boldsymbol{\beta}\right)$, then the data are not generated by a "continuous Bernoulli" distribution.
+
+-   How do you think Wooldridge would respond to the previous paragraph?
+
+-   How do you think a Bayesian would respond to the previous paragraph?
+
+# Races
+
+On May 4, 2024, the Kentucky Derby horse race was held for the 150th time in its history in Lexington, Kentucky. According to [ESPN](https://www.espn.com/horse-racing/story/_/id/40089867/record-2107m-bet-2024-kentucky-derby), 210.7 million dollars was bet on it. We have talked several times this semester about people risking money if and only if the expected value of doing so is positive. When the outcome is binary, the expected value is the probability of the event occurring. This idea can be applied in the social sciences when thinking about which candidate will win a multi-party election, which firm will be awarded a government contract, etc. In order to qualify to run in the Kentucky Derby, a horse must do sufficiently well in previous races. It is not necessary to watch a [video](https://youtu.be/NOsPqRQ51mM?feature=shared) of it, but if you feel that it would help you, it is only two minutes long.
+
+## Starting Gates
+
+Which qualifying horse starts in which of twenty starting gates is randomized. The starting gates are numbered consecutively from $1$ on the horses' left to $20$ on the right. Since the track is an oval, in order to run the shortest distance, horses need to run close to the inside rail as they go counter-clockwise around the track. Thus, starting at a higher numbered gate puts a horse at a disadvantage because the horse has to start fast and cut in front of a bunch of horses to its left in order to get close to the inside rail for the majority of the race. However, starting from gate $1$ is also thought to be a disadvantage because the horse can get squeezed up against the inside rail by a bunch of other horses that are trying to shift left.
+
+According to this [article](https://www.courier-journal.com/story/sports/horses/kentucky-derby/2024/05/04/kentucky-derby-post-positions-most-wins-horse-racing-starting-gate-2024/73543133007/) (which you do not need to read), the proportion of times that the Kentucky Derby has been won by a horse from each starting position is given by
+
+```{r}
+past_winners <- tibble(
+  starting_gate = 1:20,
+  winners = c(8, 7, 5, 5, 10, 2, 8, 9, 4, 9, 2, 3, 5, 2, 6, 4, 0, 2, 1, 2),
+  prop = winners / sum(winners)
+)
+```
+
+although not all Kentucky Derbies have had twenty horses competing.
+
+-   What do you think Ronald Fisher would say about how someone should decide which horse to bet on in the Kentucky Derby?
+
+-   Why does Fisher's advice seem insufficient for deciding which horse to bet on in the Kentucky Derby?
+
+## Odds
+
+As the 2024 Kentucky Derby started, betting \$1 on any of the following horses would yield you a payout of some number of dollars if that horse were to win (plus you get your original \$1 back), as given by the following:
+
+```{r}
+KD <- tibble(
+  starting_gate = 1:20,
+  horse = c("Dornoch", "Sierra Leone", "Mystik Dan", "Catching Freedom",
+            "Catalytic", "Just Steel", "Honor Marie", "Just a Touch",
+            "T O Password", "Forever Young", "Track Phantom", 'West Saratoga',
+            "Endlessly", "Domestic Product", "Grand Mo the First", "Fierceness",
+            "Stronghold", "Resilience", "Society Man", "Epic Ride"),
+  payout = c(22, 4.5, 18, 8, 34, 21, 14, 11, 47, 6, 40, 22, 47, 28, 48, 3,
+             35, 31, 47, 46)
+)
+```
+
+-   Assuming you decide to bet \$1 on Fierceness (from starting gate 16), how would you go about calculating the expected value of doing so and under what condition(s) would the expected value of your bet be zero (i.e. the breakeven value)?
+
+-   You might think that if you bet \$1 on each horse, then your expected value would be zero. However, that is not the case because the organizers of the Kentucky Derby keep some of the money that is bet as profit regardless of who wins. If you calculate all the breakeven values, why are they not collectively a valid set of probabilities?
+
+## Preakness
+
+Mystik Dan (barely) won the 2024 Kentucky Derby, which paid \$18 to anyone that bet \$1 it would happen. The next major horse race is May 18, 2024 at the Preakness track in Baltimore, Maryland. Although the starting gates for the Preakness will not be randomized until May 13th, bookmakers are currently only offering a payout of \$3 to anyone who bets \$1 that Mystik Dan wins the Preakness.
+
+-   Explain how the change in payout for Mystik Dan from \$18 as the Kentucky Derby started to \$3 before the starting gates for the Preakness are randomized is roughly consistent with Bayesian updating
+
+-   Explain how the breakeven value for Mystik Dan to win the Preakness is marginalized over all possible ways the competing horses could be randomized into starting gates.
+
+## NASCAR
+
+One difficulty with horse races is that all the same horses never race each other more than once. The situation is quite a bit easier if we consider stock car races where a large subset of drivers compete against each other in most of the $36$ races over the course of a season.
+
+```{r}
+NASCAR <- 
+  readr::read_table("http://ww2.amstat.org/publications/jse/datasets/nascard.dat.txt",
+                    col_names = FALSE, show_col_types = FALSE)[, -11]
+
+colnames(NASCAR) <- c("RaceID", "Year", "RaceOfYear", "Finish", "Start", "Laps", 
+                      "PrizeMoneyWon", "Cars", "Make", "Driver")
+NASCAR <- slice_max(NASCAR, Year) |> # 2003 is the latest year in the data
+  mutate(Winner = Finish == 1,
+         RaceOfYear = as.factor(RaceOfYear),
+         RelativeStart = Start / Cars)
+```
+
+Each row is a driver within a race. The variables in `NASCAR` are [described](http://jse.amstat.org/v14n3/datasets.winner.html) in more detail in Appendix 1A, but the only ones that are relevant to this problem are
+
+-   `RaceOfYear` a factor that indexes which of the $36$ races the row pertains to
+
+-   `Cars` is the number of cars entered in that `RaceOfYear`
+
+-   `Driver` is the name of the driver, on which there are $71$
+
+-   `Winner` is `TRUE` if the `Driver` finishes in first place for that `RaceOfYear` and `FALSE` otherwise
+
+-   `Start` is the starting position of the `Driver` in that `RaceOfYear`
+
+-   `RelativeStart` is the ratio of `Start` to `Cars`, which is the primary predictor of the `Winner`
+
+Unlike horse racing, the starting position in stock car racing is not randomized. Rather, in the days leading up to each race (which usually takes place on a Saturday or Sunday), each driver has several opportunities to drive by themselves on the track in an attempt to complete one lap in the shortest time. Whoever has the shortest time to complete one practice lap gets to start the actual race at the front left of the line of cars. The driver with the second fastest practice lap gets to start the race at the front right of the line of cars. And so on, such that the driver with the slowest practice lap has to start at the very back of the line of cars.
+
+Theoretically, having a lower starting position should increase the probability of winning a stock car race. The most obvious reason for this is that having a starting position at the back of the line of cars means you have to cover a slightly larger distance to reach the finish line (after hundreds of laps around the track) and more importantly, there are more cars in your way that you have to pass in order to win. But the most important reason why having a lower starting position should increase the probability of winning a stock car race is that it means your (heavily customized) car was going faster than the other cars a few days ago in the qualifying laps. If that remains the case on race day, then you have a better chance of winning. The most subtle reason why having a lower starting position should increase the probability of winning a stock car race is that the dedicated parking spots off the main track (called the pit road) where you go to fill up on gasoline and possibly get new tires are arranged in the same order as the starting positions. If multiple cars are trying to exit via the narrow pit road at the same time, they can get in each other's way and force the trailing driver to brake. Thus, there is a small advantage to having a parking spot closer to where you merge back onto the main track.
+
+In situations like this, it would be better to model the time it takes a driver to finish a race, because who wins is deterministically implied by which driver has the minimum finishing time. However, the finishing time is not included in `NASCAR` and indeed, not all drivers even finish the race because some of their cars are too damaged in crashes. Although whether a driver wins race $j$ is a binary outcome, drivers are not conditionally independent within races. If one driver wins the race, that tells you all the other drivers lost. If you estimated a regular logit model, it would put positive probability on the event that multiple drivers win the same race and put positive probability on the event that no driver wins the race.
+
+Thus, the likelihood of a "conditional logit" model, which is often abbreviated "clogit" is based on$$\Pr\left(\text{driver } n \text{ wins race } j \mid \mathbf{x}_n, \dots\right) = \frac{e^{-\eta_n}}{\sum_{i = 1}^{N_j} e^{-\eta_i}} = \mu_n$$
+
+where $\eta_n$ is a linear predictor and $N_j$ is the number of cars competing in race $j$. Another way to look at this is that we really only have $36$ independent observations (per year) on which driver wins each of the $36$ stock car races, rather than `r nrow(NASCAR)` non-independent observations on the drivers in those races.
+
+A clogit model does not have an intercept (or any other predictor that is constant within the $j$-th race) because if there were, we could rewrite the conditional probability as$$\Pr\left(\text{driver } n \text{ wins race } j \mid \mathbf{x}_n, \dots\right) = \frac{e^{-\eta_n}}{\sum_{i = 1}^{N_j} e^{-\eta_i}} = \frac{e^{-\alpha} e^{-\beta x_n}}{e^{-\alpha} \sum_{i = 1}^{N_j} e^{-\beta x_i}} = \mu_n$$
+
+Thus, the $e^{-\alpha}$ terms in the numerator and the denominator cancel, so there is no information in the data to update your beliefs about $\alpha$ with (indeed, it does not even make sense to have any beliefs about $\alpha$ in the first place). However, even if there is no intercept --- or equivalently we fix $\alpha = 0$ rather than estimating it --- we can introduce deviations from the intercept by `Driver` using lme4-style constructs.
+
+-   Explain why it is preferable in this situation to use what lme4 would call "random effects" (if using a Frequentist estimator) for the drivers rather than including a dummy variable for each of $70$ drivers (relative to the baseline driver) as "fixed effects" with independent priors on these coefficients.
+
+-   Call the `Q2 <- stan_clogit(...)` function in the rstanarm package with `data = NASCAR, strata = RaceOfYear` to estimate the parameters of a model for `Winner` where `RelativeStart` is the only predictor besides the deviation from the intercept by `Driver` . You will also have to specify the `prior` argument to reflect your beliefs about the coefficient on `RelativeStart`. The default prior on the standard deviation of the intercept deviations across drivers is fine.
+
+-   If you then call `as_tibble(Q2) |> select(starts_with("b"))` , you will get a tibble with 4000 rows and one column for each of the 71 driver deviations. The higher these posterior draws, the more skilled is the driver because they indicate how much $\eta_n$ shifts for a given `RelativeStart` of the $n$-th driver in the $j$-th race. Which driver has the highest posterior median of skill, and what is the posterior probability that that driver is the most skilled out of the 71 drivers in the data?
+
+# Monetary Policy
+
+In May 2023, Philip N. Jefferson was nominated to be the Vice Chair of the Federal Reserve Board (and was eventually confirmed by the Senate). Shortly after his nomination, Jefferson gave a short [speech](https://www.federalreserve.gov/newsevents/speech/jefferson20230512a.htm) (which you should read) where he stated
+
+> I want to share with you a few strategic principles that are important to me. First, policymakers should be ready to react to a wide range of economic conditions with respect to inflation, unemployment, economic growth, and financial stability. The unprecedented pandemic shock is a good reminder that under extraordinary circumstances it will be difficult to formulate precise forecasts in real time. Our dual mandate from the Congress is especially helpful here. It provides the foundation for all our policy decisions. Second, policymakers should clearly communicate monetary policy decisions to the public. Our commitment to transparency should be evident to the public, and monetary policy should be conducted in a way that anchors longer-term inflation expectations. Third --- and this is where I am revealing my passion for econometrics --- policymakers should continuously update their priors about how the economy works as new data become available. In other words, it is appropriate to change one's perspective as new facts emerge. In this sense, I am in favor of a Bayesian approach to information processing.
+
+## Research
+
+According to [Google Scholar](https://scholar.google.com/scholar?hl=en&as_sdt=0%2C33&q=author%3APN-Jefferson&btnG=&oq=author%3APN), Jefferson has published more than 60 articles since he defended his Ph.D. in 1990, none of which use any of the Bayesian estimation techniques that we have discussed in GR5065 despite the fact that his professional career has coincided with modern Bayesian inference using MCMC. His empirical papers all utilize point estimation that optimize some objective function. In what sense(s), do you think that Jefferson is, and is not, Bayesian?
+
+## Inflation Targeting
+
+The Federal Reserve Board has a "dual mandate" from Congressional law to achieve low unemployment and low inflation. Since the unemployment rate has been below 4% since February 2022, most of the recent attention has been on inflation. The Federal Reserve Board wants future growth in the Personal Consumption Expenditures (PCE) index to be 2% in expectation. In practice, the growth in "core" PCE index --- which excludes food and energy --- over the previous 12 months has long been thought to be the best estimate of all-inclusive PCE growth over the next 12 months. However, many economists today criticize core inflation measures because if food and energy are excluded, most of the remaining weight is on housing, which is slow to adjust to changing economic conditions since most renters sign one or two-year leases with a fixed price per month. Thus, rent increases from more than a year ago can appear to be contributing to inflation today, even if real-time measures [indicate](https://calculatedrisk.substack.com/p/asking-rents-mostly-unchanged-year-b40) that rents are similar to, or even less than, what they were a year ago.
+
+For several years, researchers at the Federal Reserve Bank of New York have produced what they call the Multivariate Core Trend (MCT) inflation index, which models a monthly PCE index for each of 17 different sectors. The expected monthly price change in each of these 17 sectors deviates from the unknown inflation dynamics for the U.S. economy as a whole, which includes the possibility of "temporary" shocks, such as a covid pandemic, wars, etc. The parameters are estimated using an older form of Markov Chain Monte Carlo (MCMC) than the algorithm in Stan. Various measures of inflation or core inflation can then be constructed by weighting the model predictions --- excluding temporary shocks --- instead of weighting the raw data (which the government does to produce official estimates of PCE).
+
+Unfortunately, the MCT model is estimated using Matlab, so you are not expected to run it or even read the [code](https://github.com/MCT-Inflation-NYFed/MCT-PCE) for it. However, you can download a summary of the MCMC draws via
+
+```{r}
+ROOT <- "https://www.newyorkfed.org/medialibrary/Research/Interactives/"
+FILE <- "mct/downloads/NYFed_MCT-Inflation_data"
+if (!file.exists("MCT.xlsx")) {
+  download.file(paste0(ROOT, FILE), destfile = "MCT.xlsx", quiet = TRUE)
+}
+MCT <- readxl::read_excel("MCT.xlsx", sheet = "Charts202403", skip = 5)[ , 1:10]
+colnames(MCT) <- c("Date", "PCE", "CorePCE", "MCT_16", "MCT_50", "MCT_84", 
+                   "MCT_diff", "Goods", "Services_exHousing", "Housing")
+MCT <- mutate(MCT, Date = as.Date(Date, format = "%d-%b-%Y"))
+```
+
+The columns of `MCT` are
+
+1.  The `Date` in question, which is the first of the month, starting in January 1960 and going up through March 2024. This is not the date that the MCT results are released, which is generally a few weeks afterward.
+
+2.  `PCE` is the official PCE for that month
+
+3.  `CorePCE` is the official core (excluding food and energy) PCE for that month
+
+4.  `MCT_16` is the 16th percentile of the posterior draws of MCT, which is roughly one standard deviation below the mean if beliefs about MCT were normally distributed in a month
+
+5.  `MCT_50` is the 50th percentile of the posterior draws of MCT, i.e. the median
+
+6.  `MCT_84` is the 84th percentile of the posterior draws of MCT, which is roughly one standard deviation above the mean if beliefs about MCT were normally distributed in a month
+
+7.  `MCT_diff` is the difference between `PCE` and `MCT_50`
+
+8.  `Goods` is the posterior median of the component of MCT that pertains to goods, although houses are not considered to be goods
+
+9.  `Services_exHousing` is the posterior median of the component of MCT that pertains to services, which does not consider housing to be a service
+
+10. `Housing` is the posterior median of the component of MCT that pertains to housing, including rentals
+
+For example, the MCT [webpage](https://www.newyorkfed.org/research/policy/mct#--:mct-inflation:trend-inflation) implies that goods inflation is quite close to its target because
+
+> The March \[2024\] estimate of MCT inflation is 0.78 percentage point (ppt) above its pre-pandemic average \[which was near 2%\]. Services ex. housing account for 0.41 ppt of this increase, while housing accounts for 0.37 ppt.
+
+-   Use `geom_line` in the ggplot2 package to plot `MCT_diff` from January 2020 to March 2024 and use `geom_ribbon` to add to it the difference between `PCE` and `MCT_16` as one edge and the difference between `PCE` and `MCT_84` as the other edge
+
+-   The New York Federal Reserve does not produce forecasts of MCT or PCE for the rest of 2024, although they are implied by the posterior predictive distribution of their model. Qualitatively speaking, what do you think the posterior predictive distribution of MCT would look like for the rest of 2024?
+
+## Futures Markets
+
+The U.S. Federal Reserve Board currently lends money overnight to U.S. banks at an interest rate between 5.25% and 5.5%, which serves as a floor for all other interest rates (at least in the United States). This range has been in effect since August of 2023, and there is currently a lot of speculation as to when the Federal Reserve Board will lower the target range. It is possible to buy a futures contract that pays \$1 if the investor correctly guesses the Federal Reserve Board's target range on a given date, which many investors use to hedge interest rate risk.
+
+Data for a futures contract that resolves when the Federal Reserve Board meets on September 18, 2024 can be downloaded via
+
+```{r}
+ROOT <- "https://cmegroup-tools.quikstrike.net/User/Export/FedWatch/"
+FILE <- "MeetingExport.aspx?MeetingDate=20240918"
+HASH <- "&insid=124818372&qsid=70cb6d07-23c6-4c6d-9f20-b409a342e599"
+if (!file.exists("FedMeeting_20240918.csv")) {
+  download.file(paste0(ROOT, FILE, HASH), 
+                destfile = "FedMeeting_20240918.csv", quiet = TRUE)
+}
+FedMeeting_20240918 <- readr::read_csv("FedMeeting_20240918.csv",
+                                       show_col_types = FALSE) |> 
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y")) |> 
+  select(Date, `(350-375)`:`(600-625)`)
+```
+
+The `Date` variable is the day that the futures contract was traded, which starts at `r first(FedMeeting_20240918[[1]])`. Every other column in `FedMeeting_20240918` is a range for the Federal Reserve Board's overnight interest rate, i.e. `(525-550)` is 5.25% to 5.5%. The cells are closing prices, which can be interpreted as market-based conditional probabilities of each interest rate range being in effect on September 18, 2024. Currently, the only contracts resolving September 18, 2024 with positive probabilities are
+
+```{r}
+slice_tail(FedMeeting_20240918, n = 1) |> 
+  select(where(~ .x > 0))
+```
+
+but other ranges had positive probability on earlier days. To simplify things, we will combine the lower ranges into a `y_1` category that is "less than or equal to 4.75%" and combine the upper ranges into a `y_4` category that is "greater than 5.25%", leaving two interior categories, `y_2` and `y_3`, that are respectively "greater than 4.75% but less than or equal to 5%" and "greater than 5% but less than or equal to 5.25%". In addition, we will limit our attention to the ten days when PCE and MCT data were released:
+
+```{r}
+PCE_release_dates <- 
+  as.Date(c("2024-04-26", "2024-03-28", "2024-02-29", "2024-01-26", "2023-12-22", 
+            "2023-11-30", "2023-10-27", "2023-09-29", "2023-08-31", "2023-07-28"))
+outcome <- filter(FedMeeting_20240918, Date %in% PCE_release_dates) |> 
+  transmute(y_1 = `(350-375)` + `(375-400)` + `(400-425)` + `(425-450)` + `(450-475)`,
+            y_2 = `(475-500)`,
+            y_3 = pmax(1e-8, `(500-525)`),
+            y_4 = 1 - y_2 - y_3)
+```
+
+Thus, $y_1$, $y_2$, $y_3$, and $y_4$ are non-negative and sum to $1$ each day. We discussed the Dirichlet distribution in Week12 in a different context, where it was used as a prior for parameters that are non-negative and sum to $1$. The Generalized Dirichlet distribution includes the Dirichlet distribution as a special case, in much the same way the normal distribution includes the standard normal distribution as a special case where the expectation is zero and the standard deviation is one. If $y_1$, $y_2$, $y_3$, and $y_4$ are jointly distributed Generalized Dirichlet, then
+
+```{=tex}
+\begin{eqnarray*}
+z_1 &\equiv& y_1 \\
+z_2 &\equiv& \frac{y_2}{1 - y_1} \\
+z_3 &\equiv& \frac{y_3}{1 - y_1 - y_2}
+\end{eqnarray*}
+```
+are independent and distributed Beta, which are easier to model with the rstanarm or brms packages. Thus, $z_j$ can be interpreted as the conditional probability that the Federal Reserve Board sets the overnight interest rate to be in $j$-th range on September 18, 2024 given that it is not set to a lower range.
+
+```{r}
+outcome <- transmute(outcome,
+                     z_1 = y_1,
+                     z_2 = y_2 / (1 - y_1),
+                     z_3 = y_3 / (1 - y_1 - y_2))
+```
+
+Next, we combine the data on $z$ with the predictor data and manipulate it into a tidy / long form:
+
+```{r}
+dataset <- slice_tail(MCT, n = nrow(outcome) + 1) |> 
+  mutate(change_PCE = c(NA_real_, diff(PCE)),
+         change_CorePCE = c(NA_real_, diff(CorePCE)),
+         change_MCT_50 = c(NA_real_, diff(MCT_50))) |> 
+  filter(!is.na(change_PCE)) |>  
+  bind_cols(outcome) |> 
+  tidyr::pivot_longer(cols = starts_with("z_"),
+                      values_to = "z",
+                      names_to = "category",
+                      names_prefix = "z_") |> 
+  mutate(category = as.integer(category),
+         Date = as.integer(as.factor(Date)))
+```
+
+When `brm` is called with `family = Beta`, the expectation is $\mu_n = \frac{1}{1 + e^{-\eta_n}}$ --- where $\eta_n$ is a linear predictor --- and the concentration parameter is $\phi > 0$. The larger is $\phi$, the closer $z_n$ tends to be to $\mu_n$.
+
+-   Call `Q3 <- brm(...)` with `data = dataset`, `family = Beta`, and `save_pars = save_pars(all = TRUE)` to draw from the posterior distribution conditional on `z` with the following stipulations:
+
+    1.  The linear predictor is a monotonic (and presumably increasing) function of `category` , which takes the index values $1$, $2$, and $3$ corresponding to $z_j$
+
+    2.  The intercept on the `Date` index (from $1$ to $10$) that the PCE and MCT data are released deviates from the global intercept according to a normal distribution with expectation zero and unknown standard deviation $\sigma$
+
+    3.  The linear predictor includes the default univariate spline from the mgcv package that consists of some measure of inflation or change in inflation (see the next bullet point)
+
+    4.  You need to choose non-default priors for all parameters, except that the default Dirichlet prior with a shape of $1$ for all components is fine for the `simo` class.
+
+-   Which of `PCE`, `CorePCE`, `MCT_50`, `change_PCE`, `change_CorePCE`, or `change_MCT_50` --- when put into the default spline --- is expected to best predict future data on $z$?
+
+-   Using the preferred model from the previous bullet point, call `posterior_predict` with `newdata = filter(dataset, Date == 10)` to obtain predictions for $z$ in March and map them back predictions of $y_1$, $y_2$, $y_3$, and $y_4$. How does the predicted probability of $y_4$ compare to the observed probability?
+
+# Presidential Support
+
+Read this [article](https://abcnews.go.com/538/trump-leads-swing-state-polls-tied-biden-nationally/story?id=109506070) by G. Elliot Morris (excluding any videos that may pop up), which purports to explain "How 538's new 2024 presidential general election polling averages work."
+
+The article has insufficient to detail to actually recreate the model, and 538 does not seem to make the Stan code publicly available, although Morris [did](https://github.com/TheEconomist/us-potus-model) so in 2020 when he was working for *The Economist*. Morris does link to a tweet with a picture of a whiteboard that appears to be (part of) a generative model, but it is hard to read what exactly is going on in the whiteboard. Thus, we will take the following simplification to be true, although it isn't exactly true.
+
+At the core of the model is a "random walk" in the **unknown** support for a Presidential candidate on day $t$. For example,$$\mu_{Bt} \thicksim \mathcal{N}\left(\mu_{B\left(t - 1\right)}, \tau\right)$$
+
+which indicates that the expected percentage support for Joe Biden $\left(B\right)$ at the national level on day $t$ is normally distributed with expectation equal to what it was on day $t - 1$ and standard deviation $\tau > 0$ . The unknown support for Donald Trump $\left(T\right)$ and Robert Kennedy $\left(K\right)$ works similarly and suppose they all have the same unknown $\tau$, which in turn has a truncated (at zero) normal prior.
+
+The percentage of support for a Presidential candidate in a state or national poll released on day $t$ is also normally distributed$$y_{Bt} \thicksim \mathcal{N}\left(\mu_{Bt} + \sum_{k = 1}^K \beta_k x_{Btk}, \sigma_y \right),$$ where the expectation is equal to the aforementioned unknown $\mu_{Bt}$ shifted by $K$ factors that include (centered) dummy variables for the pollster who conducted the poll (i.e. its $\beta_k$ is the pollster's "house effect adjustment"), how the poll was conducted ("mode effect adjustment"), whether the poll was of registered voters ("likely voter adjustment"), whether Kennedy was included in the poll, ("third party adjustment"), whether the poll was conducted by a pollster affiliated with a political party ("partisanship adjustment"), and which state (if any) the poll was limited to ("state adjustment"). The standard deviation of the poll, $\sigma_y$, is less clear but is unknown and needs a prior.
+
+There are many unknowns in the model, which all have some prior. In addition, 538 does something to enforce that support for Biden and Trump is negatively correlated but appears to assume the correlation is $-0.5$ rather than estimating it. Those details are unnecessary to answer the following subquestions.
+
+## Frameworks
+
+-   Explain how the above simplified generative process is hierarchical, in the Bayesian sense
+
+-   Explain how the above simplified generative process is not hierarchical in the Frequentist sense
+
+-   Explain how the above simplified generative process is essentially another instance of the measurement model framework discussed in HW2
+
+## Weighting
+
+Morris' model actually weights the log-likelihood contribution of a poll by some **known** positive number $w$ that has an average of $1$ across pollsters but is higher (lower) for polls that are thought to be more (less) reliable. The second footnote says
+
+> As a methodological matter, we think how to best integrate pollster weights into an aggregation model is an open debate. (In fact, one statistician told me we shouldn't weight to pollster effects at all --- instead we should create complicated meta-models of polling accuracy across many different contests simultaneously and inject the estimated uncertainty and bias of each pollster directly into our model $\dots$
+
+Do you think the aforementioned statistician was Frequentist or Bayesian? Why?
+
+## Averaging
+
+Although the article --- which is ostensibly written for a popular audience --- repeatedly refers to a process of averaging polls, it appears as if the plot of the main output
+
+![](https://i.abcnewsfe.com/a/f5dab14f-7f88-43dd-8fa4-3621c89b3f6c/presidentialgeaveragelaunch-538-cb-240425_1714050265928_hpEmbed_23x15.jpg)
+
+does not, in fact, average over any polls. Rather, it is a plot of $\mu_{Tt}$ (in red), $\mu_{Bt}$ (in blue), and $\mu_{Kt}$ (in gray) over the past couple of months. In other words, the lines are posterior medians of unknown parameters conditional on all the observed polls, and the shaded regions are corresponding credible intervals. None of these lines is a simple average of national polls released on that day (the faded points) or even a weighted average of such polls.
+
+-   How would you explain to a popular audience what the lines and shaded regions represent?
+
+-   Is the above plot a posterior predictive check? Why or why not?
+
+## Prediction Markets
+
+Morris' article goes to some length to explain that their model is not a forecast of what will happen in the November election but rather an attempt to summarize what the polls are saying voters would do if the election were to take place on day $t$. Thus, it is no surprise that Morris does not utilize or otherwise refer to futures markets that pay \$1 if an election outcome transpires. We have talked several times in class about PredictIt's futures market for who will win the electoral college, but PredictIt also has other futures markets for which party nominee will win two states: [Georgia](https://www.predictit.org/markets/detail/8072/Which-party-will-win-Georgia-in-the-2024-presidential-election) and [Wisconsin](https://www.predictit.org/markets/detail/8076/Which-party-will-win-Wisconsin-in-the-2024-presidential-election).
+
+These two states are "mostly sufficient" in the sense that if Biden were to win Georgia, then Biden will presumably win the electoral college with a margin similar to that in 2020 and if Trump were to win Wisconsin, then Trump will presumably win the electoral college with a margin similar to that in 2016. However, these two states are not "entirely sufficient" because if Biden were to lose Georgia but win Wisconsin, then the electoral college margin will presumably be even closer than it was in 2016 and 2020 and will hinge on states without futures markets such as Michigan, Pennsylvania, Arizona, Nevada, and perhaps even Nebraska and Maine, which are atypical in that they allocate their electoral votes depending on which candidate receives a plurality of votes in each of its Congressional districts instead of giving them all to the candidate with a plurality of votes statewide.
+
+You can download PredictIt's implied probabilities over the last three months of Biden winning Georgia and Wisconsin respectively by executing
+
+```{r}
+#| message: false
+ROOT <- "https://predictit.org/Resource/DownloadMarketChartData"
+Georgia <- readr::read_csv(paste0(ROOT, "?marketid=8072&timespan=90d"),
+                           show_col_types = FALSE) |> 
+  filter(ContractName == "Democratic") |> 
+  transmute(Date = as.Date(gsub(" .*$", "", Date), format = "%m/%d/%Y"),
+            State = "Georgia",
+            Biden = as.numeric(gsub("$", "", CloseSharePrice, fixed = TRUE)))
+Wisconsin <- readr::read_csv(paste0(ROOT, "?marketid=8076&timespan=90d"),
+                             show_col_types = FALSE) |> 
+  filter(ContractName == "Democratic") |> 
+  transmute(Date = as.Date(gsub(" .*$", "", Date), format = "%m/%d/%Y"),
+            State = "Wisconsin", 
+            Biden = as.numeric(gsub("$", "", CloseSharePrice, fixed = TRUE)))
+States <- bind_rows(Georgia, Wisconsin) |> 
+  mutate(Date = as.factor(Date))
+```
+
+Let's specify a model that is similar in structure to Morris' but conditions on PredictIt data for these two states instead of polls. The PredictIt data start on `r first(States[[1]])`. Note that Morris' random-walk process$$\mu_t \thicksim \mathcal{N}\left(\mu_{t - 1}, \tau\right)$$ can be equivalently rewritten as$$\forall t: \mu_t \equiv \mu_{t - 1} + \beta_{t}$$ $$\forall t: \beta_t \thicksim \mathcal{N}\left(0,\tau\right)$$ In other words, the difference between $\mu_t$ and $\mu_{t - 1}$ is a random variable, $\beta_t$, with expectation zero and standard deviation $\tau$. If you place a prior on $\tau$, then the marginal prior distribution for each $\beta_t$ is similar in form to what Supervised Learners would call lasso or L1 regularization, which we talked about in Week10.
+
+The easiest way to set up something like this is to tell R that you want to use "successive difference" coding for the 89 predictors that are derived from the `Date` factor in `States`, which is implemented in the MASS package.
+
+```{r}
+contrasts(States$Date) <- "contr.sdif"
+contr.sdif <- MASS::contr.sdif
+```
+
+Doing so implies that $\beta_t$ is the coefficient on the $t+1$-th column of the $\mathbf{X}$ matrix that is passed to Stan and that $\mu_t$ is a weighted-sum of the first $t+1$ columns of the $\mathbf{X}$ matrix. However, the functions in the rstanarm package have some conflicts with functions of the same name in the brms package, so it is best to use `withr::with_package` to avoid those conflicts by calling
+
+```{r}
+#| eval: false
+Q4 <- withr::with_package("rstanarm",
+  stan_lmer(Biden ~ Date + (1 | State), data = States,
+            # specify non-default values for prior_intercept and prior_aux
+            prior = lasso(0.1)) # on tau
+)
+```
+
+Suppose we want to consider a hypothetical state called "Swing" that is neither Georgia or Wisconsin but is akin to each of them in the sense that the vote will be close:
+
+```{r}
+Swing <- slice_tail(States, n = 1) |> 
+  mutate(State = "Swing")
+```
+
+-   Use the ggplot2 package to plot the posterior predictive distribution of the probability that Biden wins the hypothetical Swing state. What does this plot tell you about the probability of Biden winning an actual swing state like Michigan, Pennsylvania, Arizona, or Nevada?
