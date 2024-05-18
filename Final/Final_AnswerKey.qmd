@@ -1,0 +1,525 @@
+---
+title: "GR5065 Final Exam Answer Key"
+format: 
+  pdf:
+    number-sections: true
+    documentclass: article
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        \usepackage{fullpage}
+        \usepackage{cancel}
+    keep-tex: true
+editor: visual
+execute: 
+  echo: true
+---
+
+# Models for Proportions
+
+This question delved into issues raised by Bob Kubinec' blog [post](https://www.robertkubinec.com/post/frac_logit/) .
+
+## Continuous Bernoulli
+
+A valid PDF must be non-negative. If $\theta \in \left(0,1\right)$, then both $\theta^y$ and $\left(1 - \theta\right)^{1 - y}$ are positive. And since $C\left(\theta\right) \geq 2$, $f\left(y \mid \theta\right) = C\left(\theta\right) \theta^y \left(1 - \theta\right)^{1 - y}$ is positive for all $y \in \left[0,1\right]$. However, a valid PDF must also integrate to $1$ over the sample space $\Omega$, which can be [obtained analytically](https://www.wolframalpha.com/input?i=Integrate%5B2+*+ArcTanh%5B1+-2+*+%CE%B8%5D+%2F+%281+-+2+*+%CE%B8%29+*+%CE%B8%5Ey+*+%281+-+%CE%B8%29%5E%281+-+y%29%2C+%7By%2C+0%2C+1%7D%5D) or demonstrated numerically:
+
+```{r}
+f <- function(y, theta) {
+  z <- 1 - 2 * theta
+  C <- 2 * atanh(z) / z
+  C * theta^y * (1 - theta)^(1 - y)
+}
+integrate(f, lower = 0, upper = 1, theta = 1 / 3)
+integrate(f, lower = 0, upper = 1, theta = 1 / sqrt(2))
+```
+
+## Fractional Logit
+
+Frequentist theory must derive the sampling distribution of an estimator conditional on what is being estimated, in this case, $\widehat{\beta}_k \mid \beta_k$. It is critical to remember that $\widehat{\beta}_k$ is an *estimator* (i.e. a function of data), rather than an *estimate* (i.e., a number obtained by evaluating the estimator). If and only if some of the data are random variables, then $\widehat{\beta}_k \mid \beta_k$ is also a random variable, which is almost always asymptotically (multivariate) normal across all possible samples of size $N$ that could have been drawn from a population that is characterized by the true parameters. That is why $\widehat{\beta}_k \mid \beta_k$ does not conditional on the observed $\mathbf{y}$; it marginalizes over all possible $\mathbf{y}$ of size $N$.
+
+Bayesian theory must derive the posterior distribution of the parameters conditional on the observed data, in this case $\boldsymbol{\beta} \mid \mathbf{X}, \mathbf{y}, \dots$, where the $\dots$ includes prior information, such as expectations and standard deviations if the priors on the coefficients are independent and normal. Only in cases where the likelihood is naturally conjugate with the prior yield posterior distributions from named families, but in the usual case where we use MCMC to draw from a posterior distribution, the draws may collectively resemble a named family, such as the normal distribution.
+
+Many practitioners act as if the sampling distribution, $\beta_k \mid \widehat{\beta}_k$, is the same as the posterior distribution, $\beta_k \mid \mathbf{X}, \mathbf{y}$, with "no" prior information. The Annan and Hargreaves reading for HW2 discussed why this is a "category error" that "does actually work rather well in many cases". More specifically, as $N \uparrow \infty$, there are some assumptions that can be made such that $\beta_k \mid \widehat{\beta}_k$ is the same normal distribution as $\beta_k \mid \mathbf{X}, \mathbf{y}$. Indeed, the first half of the McElreath textbook invokes these assumptions when calling `rethinking::quap`, which is an abbreviation for "quadradic approximation" because the normal PDF takes a quadratic form.
+
+However, for finite $N$, the sampling distribution of a point estimator across randomly-sampled datasets of size $N$ and the posterior distribution of the parameters given $N$ observations are different. Moreover, for slightly complicated models --- such as hierarchical models --- the two distribution can be quite different even if $N$ is large, which we saw in the example of an instrumental variables model with weak instruments. In addition, for finite $N$, how close the sampling distribution of a point estimator is to the posterior distribution depends on the *unknown* parameters. Thus, to substantiate a claim that the sampling distribution of an estimator is a good substitute for the posterior distribution, you would need to conduct simulations of the point estimator for "all" possible values of the parameters that characterize the population (or else you would need to draw from the actual posterior distribution to compare the point estimator to, in which case you do not need the point estimator to approximate the posterior distribution, which is why McElreath uses `rethinking:ulam` rather than `rethinking:quap`in the second half of the textbook).
+
+Finally, for finite $N$, the prior distributions matter to the posterior distribution, which is a good thing. Frequentist estimators, such as the fractional logit estimator, are mathematically valid for any values of the parameters within a parameter space. However, most of the parameter space implies the model is scientifically or otherwise substantively useless. Researchers need to use the prior distributions to imply which subset of the parameter space is more substantively useful.
+
+## Supervised Learning
+
+Supervised Learners are often concerned with modeling the pixels of grayscale images, which can be represented as proportions where zero is pure black and one is pure white (see, for example, the `gray` function in R). Supervised Learners sometimes maximize (a negative penalty function plus)\
+$$\sum_{n = 1}^N \left[y_n \ln \theta_n\left(\widetilde{\boldsymbol{\omega}}\right) + \left(1 - y_n\right)\ln\left(1 - \theta_n\left(\widetilde{\boldsymbol{\omega}}\right)\right) \right]$$where $\theta_n\left(\widetilde{\boldsymbol{\omega}}\right)$ could be the output of a neural-network, which is a nonlinear function that can be seen as applying a sequence of activation functions to inputs that are weighted by (some subset of) $\widetilde{\boldsymbol{\omega}}$. Thus, $y_{N + n} - \theta_{N + n}\left(\widehat{\boldsymbol{\omega}}\right)$ is the error for the $n$-th observation in the testing data. Supervised Learners often choose the model with the smallest root mean-squared error in the testing data, and mean-squared error can be decomposed into squared bias plus variance.
+
+This maximization problem omits the $\ln C\left(\theta_n\left(\widetilde{\boldsymbol{\omega}}\right)\right)$ term from the "continuous Bernoulli" PDF. Ganem and Cunningham (2019) shows that the expectation of $Y$ under the "continuous Bernoulli" distribution is not $\theta$ (as would be the case in the actual Bernoulli distribution for binary outcomes) but rather is the function $\mathbb{E}Y = \frac{1}{2 \tanh^{-1}\left(1 - 2\theta\right)} - \frac{\theta}{1 - 2\theta}$. Although the omitted $\ln C\left(\theta_n\left(\widetilde{\boldsymbol{\omega}}\right)\right)$ takes the *form* of a penalty function --- in the sense that it depends only on the parameters and not on the data --- it is actually a reward function because it is positive
+
+```{r}
+#| message: false
+library(ggplot2)
+ggplot() +
+  xlim(0, 1) +
+  ylim(0.5, 2.5) +
+  geom_function(fun = ~ log(2 * atanh(1 - 2 * .x) / (1 - 2 * .x)), n = 1000) +
+  ylab("Log normalizing constant")
+```
+
+In other words, if the data were drawn from a "continuous Bernoulli" distribution and you maximized the fractional logit objective function (perhaps with a negative penalty function), the objective function would be lower than if you maximized the continuous Bernoulli log-likelihood. In particular, it would be much lower when the true $\theta_n\left(\boldsymbol{\omega}\right)$ was near zero or near one.
+
+To compensate for the lack of the $\ln C\left(\theta_n\left(\widetilde{\boldsymbol{\omega}}\right)\right)$ term, the optimal $\widehat{\boldsymbol{\omega}}$ in the training data has to deviate from the true $\boldsymbol{\omega}$ to favor more extreme $\theta$. If the $n$-th observation in the testing data is drawn from a "continuous Bernoulli" distribution given the true $\theta_{N + n}\left(\boldsymbol{\omega}\right)$, then there will be some bias in the predictions, which manifests itself in the mean-squared error (which is equivalent to squared bias plus variance).
+
+## Generative Model
+
+```{r}
+#| message: false
+source(file.path("..", "Week07", "get_Gaba_data.R")) # loads dplyr
+Gaba <- filter(Gaba, two_doses_percent <= 100) |> 
+  mutate(two_doses_prop = two_doses_percent / 100)
+```
+
+```{r}
+rcB <- function(n, theta) {
+  u <- runif(n)
+  log1mtheta <- log1p(-theta)
+  denom <- log(theta) - log1mtheta
+  numer <- log1p(u * (2 * theta - 1) - theta) - log1mtheta
+  if (length(theta) == n) return(ifelse(theta == 0.5, u, numer / denom))
+  if (length(theta) == 1 && theta != 0.5) return(numer / denom)
+  if (length(theta) >= 2 && length(theta) != n) stop("theta is the wrong size")
+  return(u) # theta == 0.5
+}
+```
+
+```{r}
+R <- 1000
+prior <- tibble(
+  beta = rnorm(R, mean = -0.1, sd = 0.05),
+  mu = rnorm(R, mean = 0, sd = 1),
+  alpha = mu - beta * mean(Gaba$Trump_percent)
+)
+predictions <- cross_join(Gaba, prior) |> 
+  transmute(eta = alpha + beta * Trump_percent,
+            theta = plogis(eta),
+            y = rcB(n(), theta),
+            x = Trump_percent)
+ggplot(predictions, aes(x, y)) + 
+  geom_hex(show.legend = FALSE)
+```
+
+## Criticism
+
+For any distribution where $\mathbb{E}Y \mid X = \theta\left(\boldsymbol{\beta}\right) = \frac{1}{1 + e^{-\eta\left(\boldsymbol{\beta}\right)}}$, the fractional logit estimator is consistent, but the "continuous Bernoulli" distribution is not among those because $\mathbb{E}Y\mid X = \frac{1}{2 \tanh^{-1}\left(1 - 2\theta\left(\boldsymbol{\beta}\right)\right)} - \frac{\theta\left(\boldsymbol{\beta}\right)}{1 - 2\theta\left(\boldsymbol{\beta}\right)} \neq \theta\left(\boldsymbol{\beta}\right)$. Thus, although the fractional logit estimator maximizes a similar function to the "continuous Bernoulli" log-likelihood, omitting $\ln \theta_n\left(\boldsymbol{\beta}\right)$ affects the estimator in much the same way it affects the predictions in the previous subproblem. From Wooldridge's perspective, maximizing the "continuous Bernoulli" log-likelihood is the right thing to do if and only if the data are drawn from a "continuous Bernoulli" distribution, whereas maximizing the fractional logit objective function is the right thing to do if and only if the data are drawn from any distribution where $\mathbb{E}Y \mid X = \theta\left(\boldsymbol{\beta}\right) = \frac{1}{1 + e^{-\eta\left(\boldsymbol{\beta}\right)}}$. In this sense, the fractional logit estimator does not make stronger-than-necessary assumptions to consistently estimate $\boldsymbol{\beta}$, which is what econometrics should be doing according to Wooldridge.
+
+One thing that isn't emphasized in Kubinec's blog post --- or any of Wooldridge's or Lei's tweets --- is that although there presumably are an infinite number of probability distributions on $\Omega = \left[0,1\right]$ where $\mathbb{E}Y \mid X = \theta\left(\boldsymbol{\beta}\right) = \frac{1}{1 + e^{-\eta\left(\boldsymbol{\beta}\right)}}$, all such distributions may not be that different from each other or that different from a Beta distribution, for example. Wooldridge would emphasize that the fractional logit estimator also does not assume that the observations are conditionally independent or are all drawn from the same family of distributions.
+
+From a Bayesian perspective, the minimal assumptions that are sufficient to consistently estimate $\boldsymbol{\beta}$ are insufficient to obtain the posterior distribution of $\boldsymbol{\beta} \mid \mathbf{X}, \mathbf{y}, \dots$. In other words, the fractional logit estimator --- like any consistent Frequentist estimator --- guarantees under its assumptions that you will get the right answer as $N \uparrow \infty$ but it does not tell you what you should believe about $\boldsymbol{\beta}$ after having observed a finite number of observations. To obtain a posterior distribution that reflects your beliefs, you essentially have to assume *some* probability distribution for $Y \mid X$ (although now there are Bayesian procedures that relax that somewhat). If you do not assume a probability distribution for $Y \mid X$, you cannot draw from the prior predictive distribution to verify that you prior beliefs about $\boldsymbol{\beta}$ are reasonable. Nor can you draw from the posterior predictive distribution to perform a posterior predictive check. Frequentists would say that you can "predict" $y_n$ with $\theta_n\left(\widehat{\boldsymbol{\beta}}\right)$ but from a Bayesian perspective, that is not a prediction and cannot form the basis for a posterior predictive check. In addition, if you cannot draw posterior predictions, you cannot maximize an expected utility function that depends on predictions in order to make a decision under decision theory. In short, from a Bayesian perspective the fractional logit estimator is essentially only good for testing a null hypothesis about $\beta_k$, which is not adequate for science or any other substantive pursuit.
+
+# Races
+
+## Starting Gates
+
+If there are $N$ horces in a race, then there are $N!$ ways to randomize $N$ horses into starting games. If Fisher were to say the same things about horse racing that he said about science, then Fisher would say the probability that a particular horse among $N$ wins the race is, conceptually, the proportion of times that horse wins out of the $N!$ ways that the $N$ horses could be randomized into starting games. Of course, we do not observe the outcome for each of the $N!$ ways that the $N$ horses could be randomized into starting games; indeed the $N = 20$ horses in the 2024 Kentucky Derby had never all raced against each other. To construct a estimator of this probability, we might consider all the past Kentucky Derbies to be like a sample of all $20! \approx 2.433 \times 10^{18}$ ways that $20$ horses could be randomized into starting gates and compute the proportion of times that a horse from each starting gate won the Kentucky Derby.
+
+```{r}
+past_winners <- tibble(
+  starting_gate = 1:20,
+  winners = c(8, 7, 5, 5, 10, 2, 8, 9, 4, 9, 2, 3, 5, 2, 6, 4, 0, 2, 1, 2),
+  prop = winners / sum(winners)
+)
+```
+
+Fisher would say that if the breakeven probability implied by the betting payout is less than the proportion of times that the Kentucky Derby has been won from a particular starting gate, then you should bet on the horse that is in that starting gate.
+
+However, all the past Kentucky Derbies are a rather small sample compared to $20!$, so the estimated proportions may be quite different from the limiting proportions as the number of Kentucky Derbies approaches infinity. In addition, these estimated proportions ignore our theory that
+
+1.  Higher starting gates are worse than lower starting gates because the horse has to run farther around an oval track to reach the finish line
+
+2.  Very low starting gates are worse than somewhat low starting gates because all the horses from higher starting gates are swerving left to reduce their distance to the finish line
+
+We could presumably come up with a better estimator of the limiting proportions as the number of Kentucky Derbies approaches infinity if we were allowed to incorporate subjective information, a.k.a. theory.
+
+Moreover, doing so presumes that all horses that have ever qualified for a Kentucky Derby do not differ from each other. In other words, the above calculation ignores all characteristics and race history of the horse, the jockey, the weather, etc. that were present for each historical Kentucky Derby. It says something about the probability that a three-year old, male, racehorse from starting gate $16$ will win but says little about whether Fierceness will win because it does not take into account any of the characteristics of Fierceness besides that he is a three-year old racehorse starting from gate $16$. Thus, from a Bayesian perspective, knowing how the starting gates were randomized does not tell you nearly enough information to decide how (or whether) to bet on a horse like Fierceness. In this sense, the Kentucky Derby is like poker where Fisher would say that you should bet (or fold) only using the information provided by a shuffled deck under a hypergeometric distribution and actual poker players would say that you should also condition on the betting of opponents, their body language, their decisions on previous hands, etc.
+
+As an empirical matter, people who bet on the Kentucky Derby do consider many additional factors besides the starting gate, so it seems like we need a (subjective) theory of probability that is capable of taking such factors into account not just to bet on the Kentucky Derby but in order to understand the betting and the decision-making of horse owners. To the extent that the Kentucky Derby is representative of decision-making under uncertainty that is commonplace in the social sciences, it seems like we we need a (subjective) theory of probability that is capable of handling that. Ironically, the subjective theory of probability is used throughout game theory but is rarely used in the social sciences to estimate the posterior distribution of the parameters implied by a theoretical model.
+
+## Odds
+
+```{r}
+KD <- tibble(
+  starting_gate = 1:20,
+  horse = c("Dornoch", "Sierra Leone", "Mystik Dan", "Catching Freedom",
+            "Catalytic", "Just Steel", "Honor Marie", "Just a Touch",
+            "T O Password", "Forever Young", "Track Phantom", 'West Saratoga',
+            "Endlessly", "Domestic Product", "Grand Mo the First", "Fierceness",
+            "Stronghold", "Resilience", "Society Man", "Epic Ride"),
+  payout = c(22, 4.5, 18, 8, 34, 21, 14, 11, 47, 6, 40, 22, 47, 28, 48, 3,
+             35, 31, 47, 46)
+)
+```
+
+The expected value of betting \$1 on horse $n$ is$$\mu_n = P_n \pi_n - 1 \left(1 - \pi_n\right) = \left(P_n + 1\right) \pi_n - 1$$ where $P_n$ is the amount of money paid out if horse $n$ wins, and $\pi_n$ is the probability that horse $n$ wins. Thus, $1 - \pi_n$ is the probability that horse $n$ loses, in which case you also lose the dollar you bet. $\pi_n$ need not be estimated by Frequentist techniques; i.e. it could take into account characteristics of the horse, the jockey, the weather, etc. If we set $\mu_n = 0$ and solve for $\pi_n^\ast = \frac{1}{P_n + 1}$, we obtain a breakeven value. However, the sum of these breakeven values is
+
+```{r}
+summarize(KD, total = sum(1 / (payout + 1)))
+```
+
+Thus, they cannot be interpreted as a valid set of probabilities because probabilities sum to $1$. The difference is due to the Kentucky Derby keeping a substantial portion of the money that is bet as revenue to (more than) offset the cost of holding the Kentucky Derby. One way (among several) to calculate "fair" probabilities is to divide each of the breakeven values by their sum, which implies the "fair" probabilities are still non-negative and sum to $1$.
+
+## Preakness
+
+From a Bayesian perspective, the "prior" probability of Mystik Dan winning the 2024 Kentucky Derby from the third starting gate was less than $\pi_{3} = \frac{1}{19}$. However, conditional on the observed event that Mystik Dan won the 2024 Kentucky Derby, the "posterior" probability of Mystik Dan winning a similar horse race in the future should be considerably greater than the "prior" probability of Mystik Dan winning the 2024 Kentucky Derby. The Preakness is similar to (albeit slightly shorter than) the Kentucky Derby, so it makes some sense that the payout for Mystik Dan winning the Preakness is only \$3. However, there is no rule that requires bookmakers to follow Bayes Rule exactly.
+
+Moreover, the randomization into starting gates for the Preakness did not occur until May 13th. In advance of that, we could posit that Mystik Dan has some probability of winning the Preakness for each of the $N!$ ways that $N$ horses could be randomized into starting gates, although those probabilities could condition on additional factors besides the starting gate. The sum of these $N!$ probabilities of Mystik Dan winning the Preakness should be equal to the breakeven value of $\pi^\ast = \frac{1}{3 + 1}$ if the breakeven values were "fair", which is to say if the Preakness did not keep a substantial fraction of the bets. In this sense, $\pi^\ast$ would be marginalized over the $N!$ ways $N$ horses could be randomized into starting gates using the special case of the General Addition Rule where the event (i.e. winning the Preakness) is mutually exclusive.
+
+For what it is worth, $N =9$ horses entered the Preakness, Mystik Dan was randomized into the fifth starting gate, and the payout for Mystik Dan winning wend down to \$2.5, which was still more than that of the favorite (Muth) who could not race in the Kentucky Derby because his trainer (Bob Baffert) was suspended for administering a prohibited drug to his horse in 2021. However, Muth had to withdraw from the Preakness due to a fever, which shifted the starting gate leftward for the four horses to his right and the payout for Mystik Dan dropped further. In addition, there is a good chance of rain before and during the Preakness. If Mystik Dan were to win the Preakness, he would surely be among the favorites to win the Belmont on June 8th. However, in 2024, the Belmont is not being held at its usual location on Long Island because Belmont Park is under renovation. Rather, this year, it is being held in upstate New York at a track that is the same length as the Preakness but a quarter-mile shorter than Belmont Park's track. Suffice it to say, it would be impossible to consider any of those circumstances in Fisher's framework.
+
+## NASCAR
+
+```{r}
+NASCAR <- 
+  readr::read_table("http://ww2.amstat.org/publications/jse/datasets/nascard.dat.txt",
+                    col_names = FALSE, show_col_types = FALSE)[, -11]
+
+colnames(NASCAR) <- c("RaceID", "Year", "RaceOfYear", "Finish", "Start", "Laps", 
+                      "PrizeMoneyWon", "Cars", "Make", "Driver")
+NASCAR <- slice_max(NASCAR, Year) |> # 2003 is the latest year in the data
+  mutate(Winner = Finish == 1,
+         RaceOfYear = as.factor(RaceOfYear),
+         RelativeStart = Start / Cars)
+```
+
+Many people said something to the effect that a fixed effects estimator estimates more parameters than a random effects estimator, but that is only true for Frequentist estimators and only true because they consider each $a_j$ to not be a parameter and integrate it out of the likelihood function. In a Bayesian model, the nominal number of parameters is actually *greater* for a model with `(1 | Driver)` because you also have to estimate the standard deviation of $a_j$, but the effective number of parameters is lower than the nominal number of parameters due to the informative prior on each $a_j$.
+
+Using independent priors on the coefficients for $J$ dummy variables would do a poor job of reflecting our prior beliefs that most professional race car drivers are mostly similar to the average professional race car driver but some may have slightly more skill than others. In addition, assuming that the deviation from the average skill of a professional race car driver is normal with some unknown standard deviation allows us to predict what would happen if a new professional race car driver were to enter a race. Doing so tends to yield better predictions of the outcome, even though Frequentists insist that "fixed effects" (and no priors) are necessary for the estimates to be unbiased across all possible datasets that could be randomly sampled. In point of fact, including fixed effects in a logit model does not yield an unbiased estimator of $\beta$ as $J \uparrow \infty$, although it is consistent as the number of races approaches infinity for fixed $J$.
+
+The higher the value of `RelativeStart` \-\-- i.e. the farther *back* the car starts --- the lower the probability that car wins a race, so its coefficient should be quite negative in expectation.
+
+```{r}
+options(mc.cores = parallel::detectCores())
+```
+
+```{r}
+#| label: Q2
+#| cache: true
+#| results: hide
+#| warning: false
+Q2 <- withr::with_namespace("rstanarm",
+  stan_clogit(Winner ~ RelativeStart + (1 | Driver), data = NASCAR, strata = RaceOfYear, 
+              prior = normal(-3, 1))
+)
+```
+
+```{r}
+Q2
+```
+
+This summary does not include each $a_j$, only their average (across MCMC draws) standard deviation of $0.64$. To make conclusions about driver skill, we can do
+
+```{r}
+a <- as_tibble(Q2) |> 
+  select(starts_with("b"))
+max_median <- apply(a, MARGIN = 2, FUN = median) |> 
+  which.max()
+max_median
+```
+
+Thus, the posterior median of Ryan Newman's skill is higher than that of any of the other $69$ drivers. However, that does not tell us the posterior probability that Ryan Newman is the most skilled driver. To calculate that, we need to do
+
+```{r}
+apply(a, MARGIN = 1, FUN = function(x) {
+  x[max_median] == max(x)
+}) |> 
+  mean()
+```
+
+Thus, the posterior probability that Ryan Newman is the best driver is about $\frac{1}{5}$, although it is higher than that of any of the other $70$ drivers.
+
+# Monetary Policy
+
+In May 2023, Philip N. Jefferson was nominated to be the Vice Chair of the Federal Reserve Board (and was eventually confirmed by the Senate). Shortly after his nomination, Jefferson gave a short [speech](https://www.federalreserve.gov/newsevents/speech/jefferson20230512a.htm) where he stated
+
+> I want to share with you a few strategic principles that are important to me. First, policymakers should be ready to react to a wide range of economic conditions with respect to inflation, unemployment, economic growth, and financial stability. The unprecedented pandemic shock is a good reminder that under extraordinary circumstances it will be difficult to formulate precise forecasts in real time. Our dual mandate from the Congress is especially helpful here. It provides the foundation for all our policy decisions. Second, policymakers should clearly communicate monetary policy decisions to the public. Our commitment to transparency should be evident to the public, and monetary policy should be conducted in a way that anchors longer-term inflation expectations. Third --- and this is where I am revealing my passion for econometrics --- policymakers should continuously update their priors about how the economy works as new data become available. In other words, it is appropriate to change one's perspective as new facts emerge. In this sense, I am in favor of a Bayesian approach to information processing.
+
+## Research
+
+Although Jefferson self-identifies as Bayesian, others who self-identify as Bayesian would surely object to the fact that Jefferson has never used MCMC (or any other Bayesian estimator) in any of his published papers. Thus, it appears as if Jefferson takes the view that
+
+1.  Policymakers believe "something" about how the economy works without necessary expressing those beliefs in terms of probability distributions
+
+2.  Econometrics happens, which traditionally means a function is optimized to obtain a point estimator of the parameters in a model of (some aspect of) the economy
+
+3.  Policymakers believe "something else" about how the economy works as a result of the econometrics without necessarily expressing those beliefs in terms of probability distributions or utilizing Bayes' Rule
+
+In other words, Jefferson seems to contrast the "Bayesian approach to information processing" with a straw-man alternative of dogmatically believing "something" about how the economy works and sticking with that belief irrespective of what new data becomes available.
+
+However, Fisher essentially created maximum likelihood in the 1920s to be a genuine alternative to the "subjective" Bayesian approach in science. Although econometrics does not utilize maximum likelihood all that much, econometrics typically does adopt the "objective" perspective on probability where the probability of an event is the proportion of times it occurs in the limit as the number of randomizations approaches infinity. Both Frequentist statisticians and econometricians have derived the (usually asymptotic) distribution of many point estimators across all random samples of size $N$ that could have been drawn from a population that is characterized by unknown parameter values.
+
+We saw in Week01 that Bayesian estimation is used in less than two percent of papers published in economics journals. However, many economists (such as Jefferson) seem to espouse the subjective perspective on probability where it is used to express degrees of belief as to whether something (such as how the economy works) is true, regardless of whether the value of the unknown is randomized by a researcher (which it is not in the case of the economy). Thus, we can reformulate the question that we started GR5065 with --- namely "Why is Bayesian estimation so rare in the social sciences when it is common in applied statistics?" --- as "Why is Bayesian estimation so rare in the social sciences when the subjective perspective on probability that gives rise to Bayesian estimation is so common and the objective perspective on probability that gives rise to Frequentist estimation is so rare?"
+
+Although Jefferson does not say so in the above speech, he presumably adheres to the "category error" referenced above from HW2 where the asymptotic normality of $\widehat{\beta}_k \mid \beta_k$ is taken to imply that $\beta_k \mid \widehat{\beta}_k$ is the same normal posterior distribution as $\beta_k \mid \mathbf{X}, \mathbf{y}$. Even though this approximation "does actually work rather well in many cases", we do not know in advance whether a particular case is among them, and we have considerable reason to doubt that it works rather well in macroeconomics because the number of past observations is rather small.
+
+Frequentists such as Fisher never claimed that Bayes Rule was a miscalculation or that they had a better way for researchers to update their beliefs about unknowns; rather Fisher said that scientists should not use probability to describe their beliefs about things that were not randomized. If Fisher's argument against the subjective perspective on probability is not persuasive to you, then it seems fairly obvious that you should use the Bayesian estimation techniques that were intended to go along with the subjective perspective on probability rather than the Frequentist estimation techniques that were intended to prevent the subjective perspective on probability from taking root in science.
+
+Frequentist estimation techniques became entrenched in the social sciences not because social scientists objected to the subjective perspective on probability but because Frequentist estimators could be implemented on computers decades before MCMC started to become feasible in 1990. Also, social scientists were willing to embrace the "category error" that the objective sampling distribution of a point estimator across all randomly-sampled datasets of size $N$ (as $N \uparrow \infty$) is the same as the subjective posterior distribution (with improper priors) of the parameters conditional on $N$ observations (that are often not a random sample from any population).
+
+Although Bayesian estimation is used in less than two percent of economics papers, that should be (and is) plenty for Jefferson to be aware that MCMC exists and can be used to draw from a posterior distribution of the parameters conditional on the $N$ observations (and prior probability distributions). Moreover, those MCMC draws are entirely adequate to "change one's perspective as new facts emerge" in accordance with Bayes Rule and for policymakers to make policy using decision theory. As Alan Greenspan said in 2004 while serving as Chair of the Federal Reserve Board, "\[T\]he conduct of monetary policy in the United States has come to involve, at its core, crucial elements of risk management. This conceptual framework emphasizes understanding as much as possible the many sources of risk and uncertainty that policymakers face, quantifying those risks when possible, and assessing the costs associated with each of the risks. In essence, the risk-management approach to monetary policymaking is an application of Bayesian decision-making." Thus, pure Bayesians would be very disappointed that Bayesian estimation and workflow is not a major part of the conduct of monetary (and other) policy.
+
+## Inflation Targeting
+
+```{r}
+ROOT <- "https://www.newyorkfed.org/medialibrary/Research/Interactives/"
+FILE <- "mct/downloads/NYFed_MCT-Inflation_data"
+if (!file.exists("MCT.xlsx")) {
+  download.file(paste0(ROOT, FILE), destfile = "MCT.xlsx", quiet = TRUE)
+}
+MCT <- readxl::read_excel("MCT.xlsx", sheet = "Charts202403", skip = 5)[ , 1:10]
+colnames(MCT) <- c("Date", "PCE", "CorePCE", "MCT_16", "MCT_50", "MCT_84", 
+                   "MCT_diff", "Goods", "Services_exHousing", "Housing")
+MCT <- mutate(MCT, Date = as.Date(Date, format = "%d-%b-%Y"))
+```
+
+From this plot, it is clear that `MCT_50` systematically differs from `PCE` once the covid pandemic started to affect the economy.
+
+```{r}
+filter(MCT, Date >= "2020-01-01") |> 
+ggplot() +
+  geom_ribbon(aes(x = Date, ymin = PCE - MCT_16, ymax = PCE - MCT_84),
+              color = "lightgrey") +
+  geom_line(aes(x = Date, y = PCE - MCT_50), color = "red") +
+  geom_line(aes(x = Date, y = MCT_diff), color = "blue")
+```
+
+However, the `MCT_50` omits "transitory factors" such as pandemics and their effects (e.g. on supply chains) and the difference between the PCE --- which is calculated from raw data and includes transitory factors --- has come down a lot since mid-2022. But most of the decrease in the gap took place in the first half of 2023. Since then, the `MCT_50` is consistently about one percentage point more than the the pre-pandemic PCE average. This fact suggests that the "transitory factors" associated with the covid pandemic have largely expired and that core inflation is currently higher than it was before 2020.
+
+If we were to draw from the posterior predictive distribution of `MCT` implied by this model for the rest of 2024, the average might continue to slowly trend downward, but the 90 percent predictive interval would be quite wide. In part, that is due to the fact that we do not have complete certainty about how the economy works but is also due to the possibility that there could be a new "transitory factor" in the future, such as an increase in oil prices due to escalation of wars in Ukraine and / or the Middle East or a bird flu pandemic. If the Federal Reserve Board relied on the MCT model (which it does not), it would be difficult to lower interest rates at its next meeting in June.
+
+## Futures Markets
+
+```{r}
+FedMeeting_20240918 <- readr::read_csv("FedMeeting_20240918.csv",
+                                       show_col_types = FALSE) |> 
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y")) |> 
+  select(Date, `(350-375)`:`(600-625)`)
+```
+
+```{r}
+PCE_release_dates <- 
+  as.Date(c("2024-04-26", "2024-03-28", "2024-02-29", "2024-01-26", "2023-12-22", 
+            "2023-11-30", "2023-10-27", "2023-09-29", "2023-08-31", "2023-07-28"))
+outcome <- filter(FedMeeting_20240918, Date %in% PCE_release_dates) |> 
+  transmute(y_1 = `(350-375)` + `(375-400)` + `(400-425)` + `(425-450)` + `(450-475)`,
+            y_2 = `(475-500)`,
+            y_3 = pmax(1e-8, `(500-525)`),
+            y_4 = 1 - y_2 - y_3)
+```
+
+```{r}
+outcome <- transmute(outcome,
+                     z_1 = y_1,
+                     z_2 = y_2 / (1 - y_1),
+                     z_3 = y_3 / (1 - y_1 - y_2))
+```
+
+```{r}
+dataset <- slice_tail(MCT, n = nrow(outcome) + 1) |> 
+  mutate(change_PCE = c(NA_real_, diff(PCE)),
+         change_CorePCE = c(NA_real_, diff(CorePCE)),
+         change_MCT_50 = c(NA_real_, diff(MCT_50))) |> 
+  filter(!is.na(change_PCE)) |>  
+  bind_cols(outcome) |> 
+  tidyr::pivot_longer(cols = starts_with("z_"),
+                      values_to = "z",
+                      names_to = "category",
+                      names_prefix = "z_") |> 
+  mutate(category = as.integer(category),
+         Date = as.integer(as.factor(Date)))
+```
+
+```{r}
+library(brms)
+```
+
+```{r}
+#| label: Q3
+#| cache: true
+#| results: hide
+#| message: false
+my_prior <- 
+  prior(normal(0, 1), class = "Intercept") +
+  prior(normal(0.25, 0.1),  class = "b", coef = "mocategory") +
+  prior(normal(0.50, 0.2),  class = "b", coef = "sx_1") + 
+  prior(exponential(1), class = "phi") + 
+  prior(exponential(2), class = "sd") + 
+  prior(exponential(5), class = "sds")
+
+Q3_PCE <- brm(z ~ mo(category) + s(x) + (1 | Date),
+              data = mutate(dataset, x = PCE),
+              family = Beta,
+              prior = my_prior,
+              save_pars = save_pars(all = TRUE))
+
+Q3_CorePCE <- brm(z ~ mo(category) + s(x) + (1 | Date),
+                  data = mutate(dataset, x = jitter(CorePCE)), # must be unique
+                  family = Beta,
+                  prior = my_prior,
+                  save_pars = save_pars(all = TRUE))
+
+Q3_MCT_50 <- brm(z ~ mo(category) + s(x) + (1 | Date),
+                 data = mutate(dataset, x = jitter(MCT_50)),
+                 family = Beta,
+                 prior = my_prior,
+                 save_pars = save_pars(all = TRUE))
+
+Q3_change_PCE <- brm(z ~ mo(category) + s(x) + (1 | Date),
+                     data = mutate(dataset, x = jitter(change_PCE)),
+                     family = Beta,
+                     prior = my_prior,
+                     save_pars = save_pars(all = TRUE))
+
+Q3_change_CorePCE <- brm(z ~ mo(category) + s(x) + (1 | Date),
+                         data = mutate(dataset, x = jitter(change_CorePCE)),
+                         family = Beta,
+                         prior = my_prior,
+                         save_pars = save_pars(all = TRUE))
+
+Q3_change_MCT_50 <- brm(z ~ mo(category) + s(x) + (1 | Date),
+                        data = mutate(dataset, x = jitter(change_MCT_50)),
+                        family = Beta,
+                        prior = my_prior,
+                        save_pars = save_pars(all = TRUE))
+```
+
+We can ascertain which of these models is expected to best predict future data using leave-one-out concepts. However, there is a minor problem in the posterior distribution is too sensitive to two observations for the PSISLOOCV estimator of the ELPD to be valid
+
+```{r}
+#| warning: false
+plot(loo(Q3_PCE), label_points = TRUE)
+```
+
+Thus, when calling `loo_compare` we need to specify either `moment_match = TRUE` or `reloo = TRUE` to estimate the ELPD without the assumption that each observation has a negligible effect on the posterior distribution:
+
+```{r}
+#| label: loo
+#| cache: true
+loo_PCE <- loo(Q3_PCE, reloo = TRUE)
+loo_CorePCE <- loo(Q3_CorePCE, reloo = TRUE)
+loo_MCT_50 <- loo(Q3_MCT_50, reloo = TRUE)
+loo_change_PCE <- loo(Q3_change_PCE, reloo = TRUE)
+loo_change_CorePCE <- loo(Q3_change_CorePCE, reloo = TRUE)
+loo_change_MCT_50 <- loo(Q3_change_MCT_50, reloo = TRUE)
+```
+
+If we had to choose one model, then the model that predicts with `PCE` is slightly preferred to each of the other models.
+
+```{r}
+loo_compare(list(loo_PCE, loo_CorePCE, loo_MCT_50, 
+                 loo_change_PCE, loo_change_CorePCE, loo_change_MCT_50))
+```
+
+However, if we ask what weighted average of the various models predictions produces the best ELPD, essentially all of the weight is put on the model that predicts with `PCE`, which indicates that the other models are not adding any additional predictive value.
+
+```{r}
+loo_model_weights(list(loo_PCE, loo_CorePCE, loo_MCT_50, 
+                       loo_change_PCE, loo_change_CorePCE, loo_change_MCT_50))
+```
+
+To obtain posterior predictions of $y_1, y_2, y_3$, and $y_4$ for the most recent period, we invert the transformation
+
+```{r}
+PPD <- posterior_predict(Q3_CorePCE, newdata = filter(dataset, Date == 10) |> mutate(x = CorePCE))
+colnames(PPD) <- c("z_1", "z_2", "z_3")
+PPD_y <- as_tibble(PPD) |> 
+  transmute(y_1 = z_1,
+            y_2 = z_2 * (1 - y_1),
+            y_3 = z_3 * (1 - y_1 - y_2),
+            y_4 = 1 - y_1 - y_2 - y_3)
+```
+
+However, the average of the posterior predictions is at odds with the observed data
+
+```{r}
+colMeans(PPD_y)
+slice_tail(FedMeeting_20240918, n = 1) |> 
+  select(where(~ .x > 0))
+```
+
+which strongly suggests that the best model does not predict well in absolute terms.
+
+# Presidential Support
+
+This question was based on an [article](https://abcnews.go.com/538/trump-leads-swing-state-polls-tied-biden-nationally/story?id=109506070) by G. Elliot Morris (excluding any videos that may pop up), which purports to explain "How 538's new 2024 presidential general election polling averages work."
+
+## Frameworks
+
+The (simplified version) of Morris' generative process (but also Morris' actual generative process) is hierarchical in the Bayesian sense that the prior distribution of some parameters depends on another parameter that has its own (marginal) prior. For example, $\mu_{Bt}$ depends on $\mu_{B\left(t - 1\right)}$ under random-walk dynamics.
+
+However, the (simplified version) of Morris' generative process (but also Morris' actual generative process) is not hierarchical in the Frequentist sense because the "big units" are not a random sample from some population of "big units". In this situation, the 50 states (plus the District of Columbia) might seem like "big units", but they are the population rather than a random sample thereof.
+
+The (simplified version) of Morris' generative process (but also Morris' actual generative process) is a special case of the general measurement model framework discussed in HW2 in the context of Equilibrium Climate Sensitivity $\left(S\right)$. In that case, $S$ is unknown but various outcomes that are thought to depend on $S$ are observed. In this context, $\mu_{Bt}$ is the proportion of voters in the country who support Biden on day $t$, which is also unknown, but various outcomes that are thought to depend on $\mu_{Bt}$ are observed, such as national or state-specific polls that are conducted on day $t$, although those depend on other variables as well. This measurement model framework is very widespread in the social sciences even though Bayesian techniques are rarely used to estimate the unknowns.
+
+## Weighting
+
+Morris' model actually weights the log-likelihood contribution of a poll by some **known** positive number $w$ that has an average of $1$ across pollsters but is higher (lower) for polls that are thought to be more (less) reliable. The second footnote says
+
+> As a methodological matter, we think how to best integrate pollster weights into an aggregation model is an open debate. (In fact, one statistician told me we shouldn't weight to pollster effects at all --- instead we should create complicated meta-models of polling accuracy across many different contests simultaneously and inject the estimated uncertainty and bias of each pollster directly into our model $\dots$
+
+The aforementioned statistician (who might well be Andrew Gelman) is expressing a Bayesian view. The reliability of each pollster is another unkown about which we can have prior beliefs about that can be updated in an appropriate model as new data (particularly new elections) are observed. There are no $w$ values in Bayes Rule, except in the case where you have multiple observations that are not distinct, as in the situation where Bernoulli random variables are aggregated to binomial random variables, in which case the size could be thought of as $w$.
+
+## Averaging
+
+![](https://i.abcnewsfe.com/a/f5dab14f-7f88-43dd-8fa4-3621c89b3f6c/presidentialgeaveragelaunch-538-cb-240425_1714050265928_hpEmbed_23x15.jpg)
+
+In the above plot, the solid lines are the median of 538's beliefs as to how many voters support each candidate on a given day along the horizontal axis. A median is such that there is an equal chance that a candidate's true proportion of support is above his solid line as the chance that it is below the solid line. The shaded regions are such that 538 believes there is a ninety percent chance that a candidate's true proportion of support on a day is within the shading. However, there is a five percent chance that the true proportion of support on a day is above the candidate's shading and five percent chance that it is below.
+
+However, nothing in this plot is a forecast of a candidate's proportion of support on Election Day in November; nor does it have anything to do with the Electoral College that will actually decide the winner of the election. In addition, it takes the national (and state level) polls that are indicated by the faded dots more-or-less at face value and does not consider the possibility that the polls could have systemic error, which was a major problem in 2016 and 2020.
+
+The above plot is not a posterior predictive check because the shaded regions are not posterior predictive distributions. The blue region is a plot of the bulk of the posterior distribution $\mu_{Bt}$, whereas to draw from the predictive distribution of a poll, you need to draw from a normal distribution whose expectation is a draw from $\mu_{Bt}$ plus the various adjustments and whose standard deviation is a draw from $\sigma$. If the model is well-calibrated, then Biden's support in ninety percent of polls should fall within the bounds of a ninety percent predictive distribution. However, 538 should be much more certain about $\mu_{Bt}$ than it is about any particular poll conducted on day $t$.
+
+## Prediction Markets
+
+```{r}
+#| message: false
+ROOT <- "https://predictit.org/Resource/DownloadMarketChartData"
+Georgia <- readr::read_csv(paste0(ROOT, "?marketid=8072&timespan=90d"),
+                           show_col_types = FALSE) |> 
+  filter(ContractName == "Democratic") |> 
+  transmute(Date = as.Date(gsub(" .*$", "", Date), format = "%m/%d/%Y"),
+            State = "Georgia",
+            Biden = as.numeric(gsub("$", "", CloseSharePrice, fixed = TRUE)))
+Wisconsin <- readr::read_csv(paste0(ROOT, "?marketid=8076&timespan=90d"),
+                             show_col_types = FALSE) |> 
+  filter(ContractName == "Democratic") |> 
+  transmute(Date = as.Date(gsub(" .*$", "", Date), format = "%m/%d/%Y"),
+            State = "Wisconsin", 
+            Biden = as.numeric(gsub("$", "", CloseSharePrice, fixed = TRUE)))
+States <- bind_rows(Georgia, Wisconsin) |> 
+  filter(Date <= "2024-05-09") |> 
+  mutate(Date = as.factor(Date))
+```
+
+```{r}
+contrasts(States$Date) <- "contr.sdif"
+contr.sdif <- MASS::contr.sdif
+```
+
+```{r}
+#| label: Q4
+#| cache: true
+#| results: hide
+Q4 <- withr::with_package("rstanarm",
+  stan_lmer(Biden ~ Date + (1 | State), data = States,
+            prior_intercept = normal(0.5, 0.05),
+            prior = lasso(0.1), # on tau
+            prior_aux = exponential(10))
+)
+```
+
+```{r}
+Swing <- slice_tail(States, n = 1) |> 
+  mutate(State = "Swing")
+PPD <- posterior_predict(Q4, newdata = Swing)
+colnames(PPD) <- "Swing"
+as_tibble(PPD) |> 
+  ggplot() + 
+  geom_density(aes(x = Swing))
+```
+
+Our model implies that for a swing state besides Georgia and Wisconsin --- such as Arizona, Michigan, Nevada, or Pennsylvania --- the probability of Biden winning is centered a bit less than $\frac{1}{2}$ and is fairly concentrated in the sense that there is little chance that the true probability is less than $\frac{2}{5}$ or greater than $\frac{3}{5}$. However, it is difficult to predict the winner of the Electoral College because these probabilities are so close to $\frac{1}{2}$ and because the swing states are not conditionally independent of each other. Thus, it would not be correct to say that the probability that Biden wins Michigan, Wisconsin, and Pennsylvania is about $\left(\frac{1}{2}\right)^3 = \frac{1}{8}$.
